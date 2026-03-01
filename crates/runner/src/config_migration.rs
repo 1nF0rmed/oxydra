@@ -5,7 +5,7 @@ use std::{
 };
 
 use toml_edit::{DocumentMut, value};
-use tracing::info;
+use tracing::{info, warn};
 use types::DEFAULT_RUNNER_CONFIG_VERSION;
 
 use crate::RunnerError;
@@ -56,7 +56,25 @@ pub(crate) fn migrate_config_file_if_needed(
         ConfigType::User => USER_MIGRATIONS,
     };
 
-    if !is_older_version(&current_version, DEFAULT_RUNNER_CONFIG_VERSION) {
+    let Some(is_older) = is_older_version(&current_version, DEFAULT_RUNNER_CONFIG_VERSION) else {
+        warn!(
+            config_type = config_type.as_label(),
+            path = %path.display(),
+            current_version,
+            target_version = DEFAULT_RUNNER_CONFIG_VERSION,
+            "skipping runner config migration because config_version is malformed"
+        );
+        return Ok(());
+    };
+
+    if !is_older {
+        info!(
+            config_type = config_type.as_label(),
+            path = %path.display(),
+            current_version,
+            target_version = DEFAULT_RUNNER_CONFIG_VERSION,
+            "skipping runner config migration because file version is current or newer"
+        );
         return Ok(());
     }
 
@@ -116,39 +134,67 @@ fn parse_document(path: &Path) -> Result<DocumentMut, RunnerError> {
 }
 
 fn backup_path_for(path: &Path) -> PathBuf {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs());
-    PathBuf::from(format!("{}.bak.{timestamp}", path.display()))
+    let timestamp = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_nanos(),
+        Err(error) => error.duration().as_nanos(),
+    };
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "config".to_owned());
+    let backup_file_name = format!("{file_name}.bak.{timestamp}.{}", std::process::id());
+    path.with_file_name(backup_file_name)
 }
 
-fn parse_version(version: &str) -> Option<(u64, u64, u64)> {
-    let mut parts = version.trim().split('.');
-    let major = parts.next()?.parse::<u64>().ok()?;
-    let minor = parts
-        .next()
-        .map_or(Some(0), |value| value.parse::<u64>().ok())?;
-    let patch = parts
-        .next()
-        .map_or(Some(0), |value| value.parse::<u64>().ok())?;
-    if parts.next().is_some() {
+fn parse_version_segments(version: &str) -> Option<Vec<u64>> {
+    let trimmed = version.trim();
+    if trimmed.is_empty() {
         return None;
     }
-    Some((major, minor, patch))
+
+    trimmed
+        .split('.')
+        .map(|segment| segment.parse::<u64>().ok())
+        .collect()
 }
 
-fn is_older_version(version: &str, target: &str) -> bool {
-    match (parse_version(version), parse_version(target)) {
-        (Some(version), Some(target)) => version < target,
-        _ => false,
-    }
+fn is_older_version(version: &str, target: &str) -> Option<bool> {
+    let Some(version_segments) = parse_version_segments(version) else {
+        return None;
+    };
+    let Some(target_segments) = parse_version_segments(target) else {
+        return None;
+    };
+
+    // Compare normalized numeric segments, padding shorter versions with zeros
+    // so that "1.0" and "1.0.0" are treated equivalently.
+    let max_len = version_segments.len().max(target_segments.len());
+    (0..max_len)
+        .map(|idx| {
+            (
+                version_segments.get(idx).copied().unwrap_or(0),
+                target_segments.get(idx).copied().unwrap_or(0),
+            )
+        })
+        .find_map(|(version_part, target_part)| {
+            if version_part < target_part {
+                Some(true)
+            } else if version_part > target_part {
+                Some(false)
+            } else {
+                None
+            }
+        })
+        .or(Some(false))
 }
 
-fn migrate_global_1_0_0_to_1_0_1(_: &mut DocumentMut) -> Result<(), RunnerError> {
+fn migrate_global_1_0_0_to_1_0_1(_document: &mut DocumentMut) -> Result<(), RunnerError> {
+    // Patch-only bump: no schema transformation is needed.
     Ok(())
 }
 
-fn migrate_user_1_0_0_to_1_0_1(_: &mut DocumentMut) -> Result<(), RunnerError> {
+fn migrate_user_1_0_0_to_1_0_1(_document: &mut DocumentMut) -> Result<(), RunnerError> {
+    // Patch-only bump: no schema transformation is needed.
     Ok(())
 }
 
