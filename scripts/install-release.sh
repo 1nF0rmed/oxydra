@@ -1040,19 +1040,25 @@ if [[ "$SYSTEM_INSTALL" == "true" ]]; then
   if [[ "$(id -u)" -eq 0 ]]; then
     mkdir -p "$INSTALL_DIR"
     for binary in "${binaries[@]}"; do
-      install_binary_local "${TMP_DIR}/${binary}" "${INSTALL_DIR}/${binary}"
+      if ! install_binary_local "${TMP_DIR}/${binary}" "${INSTALL_DIR}/${binary}"; then
+        fail "failed to install binary: ${binary}"
+      fi
     done
   else
     command -v sudo >/dev/null 2>&1 || fail "--system requires sudo (or run as root)"
     sudo mkdir -p "$INSTALL_DIR"
     for binary in "${binaries[@]}"; do
-      install_binary_system "${TMP_DIR}/${binary}" "${INSTALL_DIR}/${binary}"
+      if ! install_binary_system "${TMP_DIR}/${binary}" "${INSTALL_DIR}/${binary}"; then
+        fail "failed to install binary: ${binary}"
+      fi
     done
   fi
 else
   mkdir -p "$INSTALL_DIR"
   for binary in "${binaries[@]}"; do
-    install_binary_local "${TMP_DIR}/${binary}" "${INSTALL_DIR}/${binary}"
+    if ! install_binary_local "${TMP_DIR}/${binary}" "${INSTALL_DIR}/${binary}"; then
+      fail "failed to install binary: ${binary}"
+    fi
   done
 fi
 

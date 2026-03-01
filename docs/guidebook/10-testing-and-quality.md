@@ -91,6 +91,14 @@ The `local` test (`openai_compatible_runtime_e2e_exposes_tools_and_executes_loop
 
 The `live` test (`live_openrouter_tool_call_smoke`) sends a real request through OpenRouter to verify end-to-end provider communication.
 
+### `scripts/test-install-release.sh`
+
+```bash
+./scripts/test-install-release.sh
+```
+
+This fixture-based Bash suite validates installer behavior for fresh installs and upgrades without network access, including checksum verification, backup creation, daemon stop/restart flow, dry-run semantics, rollback restoration, and Docker pre-pull toggles.
+
 ## CI Pipeline
 
 **File:** `.github/workflows/quality-checks.yml`

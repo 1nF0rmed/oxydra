@@ -371,6 +371,7 @@ cargo run -p runner -- --config .oxydra/runner.toml --user alice --insecure star
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+./scripts/test-install-release.sh
 ```
 
 ### 7) Build release artifacts (maintainers)
