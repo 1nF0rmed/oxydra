@@ -43,9 +43,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install wasm32-wasip1 target
         run: rustup target add wasm32-wasip1
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
       - name: Run phase 5 tests
-        run: cargo test -p types -p provider -p tools -p tools-macros -p runtime -- --skip live_openai_smoke_normalizes_response
+        run: cargo nextest run -p types -p provider -p tools -p tools-macros -p runtime -- --skip live_openai_smoke_normalizes_response
+      # Runner tests now pass under nextest parallel scheduling; keep default parallelism enabled.
       - name: Run runner tests
-        run: cargo test -p runner -- --test-threads=1
+        run: cargo nextest run -p runner
       - name: Run provider snapshot test
-        run: cargo test -p provider snapshot
+        run: cargo nextest run -p provider snapshot

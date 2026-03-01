@@ -352,11 +352,7 @@ fn process_startup_sends_bootstrap_frame_to_runtime_stdin() {
             "linux",
         )
         .expect("process startup should succeed");
-    wait_for_file(&captured_frame_path);
-
-    let encoded = fs::read(&captured_frame_path).expect("captured bootstrap frame should exist");
-    let decoded = RunnerBootstrapEnvelope::from_length_prefixed_json(&encoded)
-        .expect("captured bootstrap frame should decode");
+    let decoded = wait_for_bootstrap_frame(&captured_frame_path);
     assert_eq!(decoded, startup.bootstrap);
     startup
         .shutdown()
@@ -852,14 +848,19 @@ fn short_temp_dir(label: &str) -> PathBuf {
     path
 }
 
-fn wait_for_file(path: &Path) {
+fn wait_for_bootstrap_frame(path: &Path) -> RunnerBootstrapEnvelope {
     for _ in 0..100 {
-        if path.exists() {
-            return;
+        if let Ok(encoded) = fs::read(path)
+            && let Ok(decoded) = RunnerBootstrapEnvelope::from_length_prefixed_json(&encoded)
+        {
+            return decoded;
         }
         thread::sleep(std::time::Duration::from_millis(20));
     }
-    panic!("timed out waiting for file `{}`", path.display());
+    panic!(
+        "timed out waiting for decodable bootstrap frame in `{}`",
+        path.display()
+    );
 }
 
 async fn send_control_request(

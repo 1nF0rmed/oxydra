@@ -102,7 +102,7 @@ The CI pipeline runs on every push and PR:
 | Formatting | `cargo fmt --check` | Hard fail on formatting violations |
 | Supply chain | `cargo deny check` | License allowlist + source verification |
 | Linting | `clippy` | Deny all warnings (no `#[allow]` directives) |
-| Tests | `cargo test` | Full test suite for all crates |
+| Tests | `cargo nextest run` | Full test suite for all crates |
 | Snapshots | Provider-specific `insta` tests | Verify wire format stability |
 
 ## `deny.toml` Policies
