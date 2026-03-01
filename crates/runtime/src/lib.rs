@@ -517,6 +517,42 @@ impl AgentRuntime {
                 }));
             }
 
+            // Spawn a periodic heartbeat so channels can show the user that
+            // the agent is still working during long-running tool execution.
+            let heartbeat_handle = stream_events.as_ref().map(|sender| {
+                let sender = sender.clone();
+                let tool_names: Vec<String> = tool_calls.iter().map(|tc| tc.name.clone()).collect();
+                let max_turns = self.limits.max_turns;
+                tokio::spawn(async move {
+                    let start = tokio::time::Instant::now();
+                    let mut interval = tokio::time::interval(Duration::from_secs(5));
+                    // Skip the first (immediate) tick — the ToolExecution
+                    // event already announced what is happening.
+                    interval.tick().await;
+                    loop {
+                        interval.tick().await;
+                        let elapsed = start.elapsed().as_secs();
+                        let names_display = tool_names.join(", ");
+                        if sender
+                            .send(StreamItem::Progress(RuntimeProgressEvent {
+                                kind: RuntimeProgressKind::ToolHeartbeat {
+                                    tool_names: tool_names.clone(),
+                                    elapsed_secs: elapsed,
+                                },
+                                message: format!(
+                                    "[{turn}/{max_turns}] Still executing: {names_display} ({elapsed}s)"
+                                ),
+                                turn,
+                                max_turns,
+                            }))
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                })
+            });
+
             let mut current_batch = Vec::new();
             for tool_call in &tool_calls {
                 let tier = self
@@ -574,6 +610,11 @@ impl AgentRuntime {
                     self.persist_message_if_needed(session_id, &mut next_memory_sequence, &message)
                         .await?;
                 }
+            }
+
+            // Stop the heartbeat now that all tools have finished.
+            if let Some(handle) = heartbeat_handle {
+                handle.abort();
             }
         }
     }

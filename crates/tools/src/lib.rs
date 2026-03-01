@@ -987,7 +987,10 @@ async fn connect_unix_sidecar_bash_tool(endpoint: SidecarEndpoint) -> (BashTool,
             )
             .await
             {
-                Ok(session) => {
+                Ok(mut session) => {
+                    // Store endpoint for reconnection after potential socket desync.
+                    session.reconnect_endpoint = Some(endpoint.clone());
+                    session.reconnect_config = ShellSessionConfig::default();
                     let status = session.status().clone();
                     return (BashTool::from_shell_session(Box::new(session)), status);
                 }

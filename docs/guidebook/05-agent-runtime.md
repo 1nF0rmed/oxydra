@@ -432,6 +432,7 @@ pub enum RuntimeProgressKind {
     ProviderCall,
     ToolExecution { tool_names: Vec<String> },
     RollingSummary,
+    ToolHeartbeat { tool_names: Vec<String>, elapsed_secs: u64 },
 }
 ```
 
@@ -441,5 +442,12 @@ pub enum RuntimeProgressKind {
 |-------|-------|
 | Before each `request_provider_response()` call | `RuntimeProgressKind::ProviderCall` |
 | Before tool dispatch loop | `RuntimeProgressKind::ToolExecution { tool_names }` |
+| Every 5 seconds during tool execution | `RuntimeProgressKind::ToolHeartbeat { tool_names, elapsed_secs }` |
+
+`ToolHeartbeat` events are emitted by a background task that runs alongside
+tool execution.  The task is spawned when tools begin and aborted when the
+batch finishes.  This gives connected channels (TUI, API) a periodic signal
+that the agent is still working during long-running tool calls, preventing
+"appears frozen" confusion for users.
 
 Progress events are not emitted from within provider streams — they originate only in the runtime loop itself, at transitions the provider cannot observe. Channels decide independently how to render them. The TUI shows the `progress.message` string as the input bar title (replacing "Waiting...") while a turn is active.

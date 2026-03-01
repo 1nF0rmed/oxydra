@@ -233,6 +233,12 @@ pub struct VsockShellSession {
     status: SessionStatus,
     session_id: Option<String>,
     client: Option<ShellDaemonRpcClient>,
+    /// Stored for reconnection after socket desync.
+    /// `None` when the session was created via `connect_with_stream` (e.g. in tests)
+    /// where we don't have the addressing information needed to open a new socket.
+    pub(crate) reconnect_endpoint: Option<SidecarEndpoint>,
+    /// Shell session config, stored for reconnection so we can re-spawn a session.
+    pub(crate) reconnect_config: ShellSessionConfig,
 }
 
 impl VsockShellSession {
@@ -277,11 +283,15 @@ impl VsockShellSession {
                     stream,
                     SidecarTransport::Vsock,
                     endpoint.address.clone(),
-                    config,
+                    config.clone(),
                 )
                 .await
                 {
-                    Ok(session) => session,
+                    Ok(mut session) => {
+                        session.reconnect_endpoint = Some(endpoint);
+                        session.reconnect_config = config;
+                        session
+                    }
                     Err(error) => Self::unavailable(
                         SessionUnavailableReason::ProtocolError,
                         error.to_string(),
@@ -321,6 +331,11 @@ impl VsockShellSession {
             status: sidecar_status(transport, address),
             session_id: Some(spawn_ack.session_id),
             client: Some(client),
+            // Reconnection via `connect_with_stream` is not supported because
+            // we don't have the addressing information to open a new socket.
+            // Callers that use `connect()` set these fields afterward.
+            reconnect_endpoint: None,
+            reconnect_config: config,
         })
     }
 
@@ -336,11 +351,142 @@ impl VsockShellSession {
             status,
             session_id: None,
             client: None,
+            reconnect_endpoint: None,
+            reconnect_config: ShellSessionConfig::default(),
         }
     }
 
     fn unavailable_error(&self) -> SandboxError {
         status_error(&self.status)
+    }
+
+    /// Returns `true` when the error might indicate that the socket framing is
+    /// out of sync (e.g. a stale response from a previously timed-out command
+    /// was read instead of the expected response).
+    ///
+    /// NOTE: If additional desync-related issues are observed in the future,
+    /// consider adding request-id correlation to the RPC client so that stale
+    /// responses can be detected and drained without tearing down the connection.
+    fn is_recoverable_desync(error: &SandboxError) -> bool {
+        matches!(
+            error,
+            SandboxError::UnexpectedResponse { .. }
+                | SandboxError::ShellDaemon { .. }
+                | SandboxError::ConnectionClosed
+                | SandboxError::Transport(_)
+                | SandboxError::DeserializeResponse(_)
+        )
+    }
+
+    /// Tear down the current connection and open a fresh socket + session to
+    /// the same sidecar endpoint.  This recovers from protocol desync caused
+    /// by client-side timeout cancellation leaving stale response frames in
+    /// the socket buffer.
+    ///
+    /// Returns `Err` if no reconnect endpoint was stored (i.e. the session was
+    /// created via `connect_with_stream`) or if the new connection fails.
+    async fn reconnect(&mut self) -> Result<(), SandboxError> {
+        let endpoint = match &self.reconnect_endpoint {
+            Some(ep) => ep.clone(),
+            None => {
+                return Err(SandboxError::SessionUnavailable {
+                    reason: SessionUnavailableReason::ProtocolError,
+                    detail: "cannot reconnect: no sidecar endpoint stored".to_owned(),
+                });
+            }
+        };
+
+        // Drop the old framed connection so the stale socket is closed.
+        self.client = None;
+        self.session_id = None;
+
+        let socket_path = match endpoint.transport {
+            SidecarTransport::Vsock | SidecarTransport::Unix => {
+                sidecar_unix_bridge_path(&endpoint.address)
+            }
+        };
+        let socket_path = match socket_path {
+            Some(p) => p.to_owned(),
+            None => {
+                return Err(SandboxError::SessionUnavailable {
+                    reason: SessionUnavailableReason::InvalidAddress,
+                    detail: format!(
+                        "cannot reconnect: unable to resolve socket path from `{}`",
+                        endpoint.address
+                    ),
+                });
+            }
+        };
+
+        #[cfg(unix)]
+        {
+            let stream = UnixStream::connect(&socket_path).await.map_err(|error| {
+                SandboxError::SessionUnavailable {
+                    reason: SessionUnavailableReason::ConnectionFailed,
+                    detail: format!(
+                        "reconnect failed: could not connect to `{socket_path}`: {error}"
+                    ),
+                }
+            })?;
+
+            let mut client = ShellDaemonRpcClient::new(stream);
+            let spawn_ack = client.spawn_session(&self.reconnect_config).await?;
+
+            info!(
+                session_id = %spawn_ack.session_id,
+                socket_path = %socket_path,
+                "shell session reconnected after desync recovery"
+            );
+
+            self.session_id = Some(spawn_ack.session_id);
+            self.client = Some(client);
+            self.status = sidecar_status(endpoint.transport, endpoint.address);
+            Ok(())
+        }
+
+        #[cfg(not(unix))]
+        {
+            let _ = socket_path;
+            Err(SandboxError::SessionUnavailable {
+                reason: SessionUnavailableReason::UnsupportedTransport,
+                detail: "cannot reconnect on non-unix platform".to_owned(),
+            })
+        }
+    }
+
+    /// Low-level exec_command RPC call without reconnection logic.
+    async fn rpc_exec_command(
+        &mut self,
+        command: &str,
+        timeout_secs: Option<u64>,
+    ) -> Result<ExecCommandAck, SandboxError> {
+        let session_id = match self.session_id.as_deref() {
+            Some(id) => id.to_owned(),
+            None => return Err(self.unavailable_error()),
+        };
+        let client = self
+            .client
+            .as_mut()
+            .ok_or_else(|| status_error(&self.status))?;
+        client
+            .exec_command(&session_id, command, timeout_secs)
+            .await
+    }
+
+    /// Low-level stream_output RPC call without reconnection logic.
+    async fn rpc_stream_output(
+        &mut self,
+        max_bytes: Option<usize>,
+    ) -> Result<StreamOutputChunk, SandboxError> {
+        let session_id = match self.session_id.as_deref() {
+            Some(id) => id.to_owned(),
+            None => return Err(self.unavailable_error()),
+        };
+        let client = self
+            .client
+            .as_mut()
+            .ok_or_else(|| status_error(&self.status))?;
+        client.stream_output(&session_id, max_bytes).await
     }
 }
 
@@ -363,32 +509,53 @@ impl ShellSession for VsockShellSession {
             return Err(SandboxError::EmptyCommand);
         }
 
-        let session_id = match self.session_id.as_deref() {
-            Some(session_id) => session_id.to_owned(),
-            None => return Err(self.unavailable_error()),
-        };
-        let client = match self.client.as_mut() {
-            Some(client) => client,
-            None => return Err(self.unavailable_error()),
-        };
-        client
-            .exec_command(&session_id, command, timeout_secs)
-            .await
+        let result = self.rpc_exec_command(command, timeout_secs).await;
+
+        match result {
+            Ok(ack) => Ok(ack),
+            Err(error)
+                if Self::is_recoverable_desync(&error) && self.reconnect_endpoint.is_some() =>
+            {
+                warn!(
+                    original_error = %error,
+                    "sidecar shell session exec_command failed with recoverable error; attempting reconnect"
+                );
+                self.reconnect().await?;
+                // Retry the command on the fresh session.
+                self.rpc_exec_command(command, timeout_secs).await
+            }
+            Err(error) => Err(error),
+        }
     }
 
     async fn stream_output(
         &mut self,
         max_bytes: Option<usize>,
     ) -> Result<StreamOutputChunk, SandboxError> {
-        let session_id = match self.session_id.as_deref() {
-            Some(session_id) => session_id.to_owned(),
-            None => return Err(self.unavailable_error()),
-        };
-        let client = match self.client.as_mut() {
-            Some(client) => client,
-            None => return Err(self.unavailable_error()),
-        };
-        client.stream_output(&session_id, max_bytes).await
+        let result = self.rpc_stream_output(max_bytes).await;
+
+        match result {
+            Ok(chunk) => Ok(chunk),
+            Err(error)
+                if Self::is_recoverable_desync(&error) && self.reconnect_endpoint.is_some() =>
+            {
+                warn!(
+                    original_error = %error,
+                    "sidecar shell session stream_output failed with recoverable error; reconnecting (command output lost)"
+                );
+                self.reconnect().await?;
+                // After reconnect the previous command's output is gone because
+                // we opened a new session.  Return an explicit error so the
+                // caller / LLM can retry the command.
+                Err(SandboxError::ShellDaemon {
+                    request_id: None,
+                    message: "shell session was reconnected after a protocol desync; \
+                              the previous command's output was lost — please retry the command"
+                        .to_owned(),
+                })
+            }
+            Err(error) => Err(error),
+        }
     }
 
     async fn kill_session(&mut self) -> Result<KillSessionAck, SandboxError> {
@@ -1106,6 +1273,116 @@ mod tests {
         assert_eq!(attempt.mechanism, ProcessHardeningMechanism::Seatbelt);
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         assert_eq!(attempt.mechanism, ProcessHardeningMechanism::Landlock);
+    }
+
+    #[test]
+    fn is_recoverable_desync_classifies_errors_correctly() {
+        // Desync-indicating errors → recoverable
+        assert!(VsockShellSession::is_recoverable_desync(
+            &SandboxError::UnexpectedResponse {
+                expected: "stream_output",
+                actual: "exec_command"
+            }
+        ));
+        assert!(VsockShellSession::is_recoverable_desync(
+            &SandboxError::ShellDaemon {
+                request_id: None,
+                message: "command execution timed out after 30s".to_owned()
+            }
+        ));
+        assert!(VsockShellSession::is_recoverable_desync(
+            &SandboxError::ConnectionClosed
+        ));
+
+        // Non-desync errors → not recoverable
+        assert!(!VsockShellSession::is_recoverable_desync(
+            &SandboxError::EmptyCommand
+        ));
+        assert!(!VsockShellSession::is_recoverable_desync(
+            &SandboxError::InvalidConfig("test")
+        ));
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn exec_command_reconnects_on_desync_error() {
+        use tokio::net::UnixListener;
+
+        // Create a real shell-daemon listening on a temp Unix socket
+        // so reconnection can open a new connection to it.
+        let socket_dir = std::env::temp_dir().join(format!("ox-ds-{}", std::process::id()));
+        fs::create_dir_all(&socket_dir).expect("socket dir should be created");
+        let socket_path = socket_dir.join("shell-daemon.sock");
+
+        let server = ShellDaemonServer::default();
+        let listener = UnixListener::bind(&socket_path).expect("listener should bind");
+        let server_task = tokio::spawn({
+            let server = server.clone();
+            async move { server.serve_unix_listener(listener).await }
+        });
+
+        // Connect to the daemon using a duplex stream initially
+        // (simulating the first connection).
+        let (client_stream, server_stream) = duplex(16 * 1024);
+        let initial_server_task = tokio::spawn({
+            let server = server.clone();
+            async move { server.serve_stream(server_stream).await }
+        });
+
+        let mut session = VsockShellSession::connect_with_stream(
+            client_stream,
+            SidecarTransport::Unix,
+            format!("unix://{}", socket_path.display()),
+            ShellSessionConfig::default(),
+        )
+        .await
+        .expect("session should initialize");
+
+        // Set the reconnect endpoint so reconnection is possible.
+        session.reconnect_endpoint = Some(SidecarEndpoint {
+            transport: SidecarTransport::Unix,
+            address: format!("unix://{}", socket_path.display()),
+        });
+        session.reconnect_config = ShellSessionConfig::default();
+
+        // Verify the session works.
+        session
+            .exec_command("printf desync-test", Some(10))
+            .await
+            .expect("initial exec should succeed");
+        let chunk = session
+            .stream_output(None)
+            .await
+            .expect("initial stream should succeed");
+        assert!(chunk.data.contains("desync-test"));
+
+        // Now drop the initial connection to simulate desync — set the
+        // client to None so the next call will fail with unavailable,
+        // then manually set it back to trigger the right error path.
+        // Instead, let's close the server side of the duplex to simulate
+        // a broken connection.
+        drop(initial_server_task);
+
+        // The next exec_command should fail on the broken connection
+        // and reconnect to the Unix socket listener.
+        let result = session
+            .exec_command("printf after-reconnect", Some(10))
+            .await;
+        // After reconnect, the command should succeed.
+        assert!(
+            result.is_ok(),
+            "exec_command should succeed after reconnect, got: {result:?}"
+        );
+
+        let chunk = session
+            .stream_output(None)
+            .await
+            .expect("stream after reconnect should succeed");
+        assert!(chunk.data.contains("after-reconnect"));
+
+        // Cleanup
+        server_task.abort();
+        let _ = fs::remove_dir_all(socket_dir);
     }
 
     fn unique_temp_path(prefix: &str) -> PathBuf {

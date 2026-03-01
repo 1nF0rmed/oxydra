@@ -224,6 +224,25 @@ pub enum ShellDaemonResponse {
 }
 ```
 
+#### Socket Desync Recovery
+
+The protocol is strictly request-response over a single framed stream.  If the
+client-side future is cancelled (e.g. by a `turn_timeout`) while waiting for a
+server response, the socket may retain a stale response frame.  The next
+request would then read the previous command's response, permanently desyncing
+the two sides.
+
+`VsockShellSession` detects this by classifying certain errors as
+*recoverable desync* (`UnexpectedResponse`, stale `ShellDaemon` errors,
+`ConnectionClosed`, transport failures).  On such an error it tears down the
+current socket, opens a new connection to the sidecar, spawns a fresh session,
+and retries the command.  For `stream_output` failures the command output is
+lost, so an explicit "please retry" error is returned to the LLM.
+
+> **Future consideration:** If additional desync-related issues are observed,
+> adding request-id correlation to the RPC client could detect and drain stale
+> responses without tearing down the connection.
+
 ### Session Management
 
 The `SessionManager` maintains a map of active shell sessions. Each session is an isolated shell process with its own working directory, environment, and lifecycle. Sessions can be spawned, used for multiple commands, streamed, and killed independently.

@@ -202,6 +202,13 @@ pub enum RuntimeProgressKind {
     ToolExecution { tool_names: Vec<String> },
     /// A context rolling summary is being generated.
     RollingSummary,
+    /// Periodic heartbeat emitted while tools are still executing.  Channels
+    /// can use this to update a "still working…" indicator so the user knows
+    /// the agent has not stalled.
+    ToolHeartbeat {
+        tool_names: Vec<String>,
+        elapsed_secs: u64,
+    },
 }
 
 // ---------------------------------------------------------------------------
