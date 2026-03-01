@@ -34,8 +34,10 @@ BACKUP_ROOT=""
 BACKUP_PATH=""
 ROLLBACK_READY=false
 ROLLBACK_IN_PROGRESS=false
+ROLLBACK_OFFERED=false
 RUNNER_CONFIG_EXISTED_BEFORE=false
 DAEMON_WAS_RUNNING=false
+INSTALL_COMPLETED=false
 ACTIVE_USERS=()
 STOPPED_USERS=()
 
@@ -407,7 +409,7 @@ cleanup_old_new_templates() {
 
   for file in runner.toml agent.toml runner-user.toml; do
     keep_path="${config_root}/${file}.${current_tag}.new"
-    for path in "${config_root}/${file}.v"*.new; do
+    for path in "${config_root}/${file}."*.new; do
       [[ -e "$path" ]] || continue
       if [[ "$path" != "$keep_path" ]]; then
         rm -f "$path"
@@ -463,7 +465,8 @@ initialize_config_templates() {
     fi
   fi
 
-  cat <<EOF
+  if [[ "$RUNNER_CONFIG_EXISTED_BEFORE" != "true" ]]; then
+    cat <<EOF
 [oxydra-install] Config templates are ready in ${config_root}
 [oxydra-install] Update these values before first run:
   1) ${config_root}/runner.toml
@@ -481,6 +484,9 @@ initialize_config_templates() {
   4) Export your provider API key environment variable:
      OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY
 EOF
+  else
+    log "Config updated in ${config_root} ([guest_images] tags set to ${TAG})"
+  fi
 }
 
 parse_runner_users() {
@@ -718,9 +724,19 @@ restore_from_backup() {
   fi
 
   if [[ -d "${BACKUP_PATH}/config/.oxydra" ]]; then
-    rm -rf "$CONFIG_ROOT" || restore_ok=false
+    local config_staging="${CONFIG_ROOT}.rollback-staging"
+    rm -rf "$config_staging" 2>/dev/null || true
     mkdir -p "$(dirname "$CONFIG_ROOT")" || restore_ok=false
-    cp -R "${BACKUP_PATH}/config/.oxydra" "$CONFIG_ROOT" || restore_ok=false
+    if [[ "$restore_ok" == "true" ]]; then
+      cp -R "${BACKUP_PATH}/config/.oxydra" "$config_staging" || restore_ok=false
+    fi
+    if [[ "$restore_ok" == "true" ]]; then
+      rm -rf "$CONFIG_ROOT"
+      mv "$config_staging" "$CONFIG_ROOT" || restore_ok=false
+    fi
+    if [[ "$restore_ok" != "true" ]]; then
+      rm -rf "$config_staging" 2>/dev/null || true
+    fi
   fi
 
   ROLLBACK_IN_PROGRESS=false
@@ -728,9 +744,10 @@ restore_from_backup() {
 }
 
 maybe_offer_rollback() {
-  if [[ "$ROLLBACK_READY" != "true" || "$ROLLBACK_IN_PROGRESS" == "true" ]]; then
+  if [[ "$ROLLBACK_READY" != "true" || "$ROLLBACK_IN_PROGRESS" == "true" || "$ROLLBACK_OFFERED" == "true" ]]; then
     return
   fi
+  ROLLBACK_OFFERED=true
 
   if ! confirm_default_yes "Installation failed. Restore from backup?"; then
     return
@@ -1004,6 +1021,9 @@ fi
 
 TMP_DIR="$(mktemp -d)"
 cleanup() {
+  if [[ "$INSTALL_COMPLETED" != "true" ]]; then
+    maybe_offer_rollback
+  fi
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -1085,6 +1105,8 @@ fi
 
 pre_pull_images
 restart_stopped_daemons
+
+INSTALL_COMPLETED=true
 
 if [[ -n "$TARGET_VERSION_NORMALIZED" && -n "$CURRENT_VERSION_NORMALIZED" ]]; then
   log "Done. Upgraded v${CURRENT_VERSION_NORMALIZED} -> v${TARGET_VERSION_NORMALIZED}"

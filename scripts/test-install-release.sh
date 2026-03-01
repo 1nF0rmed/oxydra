@@ -243,7 +243,7 @@ if [[ -n "${MOCK_CURL_LOG:-}" ]]; then
 fi
 
 if [[ "$url" == *"/releases/latest" ]]; then
-  printf '{"tag_name":"%s"}' "${MOCK_LATEST_TAG:-v0.0.0}"
+  printf '{\n  "tag_name": "%s"\n}\n' "${MOCK_LATEST_TAG:-v0.0.0}"
   exit 0
 fi
 
@@ -291,7 +291,14 @@ dst="$2"
 
 if [[ "${MOCK_INSTALL_FAIL_ONCE:-0}" == "1" ]]; then
   marker="${MOCK_INSTALL_FAIL_MARKER:?MOCK_INSTALL_FAIL_MARKER must be set when MOCK_INSTALL_FAIL_ONCE=1}"
-  if [[ ! -f "$marker" ]]; then
+  target_binary="${MOCK_INSTALL_FAIL_ON_BINARY:-}"
+  should_fail=false
+  if [[ -z "$target_binary" ]]; then
+    should_fail=true
+  elif [[ "$(basename "$dst")" == "$target_binary" ]]; then
+    should_fail=true
+  fi
+  if [[ "$should_fail" == "true" && ! -f "$marker" ]]; then
     : > "$marker"
     echo "mock install: intentional one-time failure" >&2
     exit 1
@@ -343,7 +350,7 @@ setup_case() {
   export MOCK_DOCKER_LOG="${LOG_DIR}/docker.log"
   export MOCK_INSTALL_FAIL_MARKER="${LOG_DIR}/install-failed-once.marker"
   export RUNNER_START_LOG="${LOG_DIR}/runner-start.log"
-  unset MOCK_INSTALL_FAIL_ONCE MOCK_DOCKER_FAIL
+  unset MOCK_INSTALL_FAIL_ONCE MOCK_DOCKER_FAIL MOCK_INSTALL_FAIL_ON_BINARY MOCK_LATEST_TAG
 }
 
 create_release_fixture() {
@@ -473,6 +480,7 @@ test_fresh_install_path() {
   assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'oxydra_vm = "ghcr.io/shantanugoel/oxydra-vm:v2.0.0"'
   assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'shell_vm  = "ghcr.io/shantanugoel/shell-vm:v2.0.0"'
   assert_file_not_exists "$BACKUP_DIR"
+  assert_contains "$output" "Update these values before first run"
 }
 
 test_upgrade_updates_tags_and_creates_backups() {
@@ -511,6 +519,8 @@ test_upgrade_updates_tags_and_creates_backups() {
 
   assert_file_exists "${backup_path}/binaries/runner"
   assert_file_contains_literal "${backup_path}/config/.oxydra/runner.toml" 'oxydra_vm = "registry.example.com/acme/oxydra-vm:old-custom" # keep comment'
+  assert_not_contains "$output" "Update these values before first run"
+  assert_contains "$output" "Config updated in"
 }
 
 test_dry_run_keeps_state_unchanged() {
@@ -654,13 +664,312 @@ test_no_pull_flag_skips_docker_prepull() {
   assert_file_empty "${LOG_DIR}/docker.log"
 }
 
+# ---------------------------------------------------------------------------
+# Additional helpers for new test cases
+# ---------------------------------------------------------------------------
+
+setup_existing_config_multi_user() {
+  mkdir -p "${WORKSPACE}/.oxydra/users"
+  cat > "${WORKSPACE}/.oxydra/runner.toml" <<'EOF'
+config_version = "1.0.1"
+workspace_root = "workspaces"
+default_tier = "container"
+
+[guest_images]
+oxydra_vm = "ghcr.io/shantanugoel/oxydra-vm:v1.0.0"
+shell_vm  = "ghcr.io/shantanugoel/shell-vm:v1.0.0"
+
+[users.alice]
+config_path = "users/alice.toml"
+
+[users.bob]
+config_path = "users/bob.toml"
+EOF
+  cat > "${WORKSPACE}/.oxydra/agent.toml" <<'EOF'
+config_version = "1.0.0"
+[selection]
+provider = "openai"
+model = "gpt-4o-mini"
+EOF
+  cat > "${WORKSPACE}/.oxydra/users/alice.toml" <<'EOF'
+config_version = "1.0.1"
+EOF
+  cat > "${WORKSPACE}/.oxydra/users/bob.toml" <<'EOF'
+config_version = "1.0.1"
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# New test cases
+# ---------------------------------------------------------------------------
+
+test_downgrade_prints_warning() {
+  setup_case
+  create_release_fixture "v1.0.0" "1.0.0"
+  setup_existing_install "2.0.0"
+  setup_existing_config
+
+  local output
+  output="$(run_installer_capture 0 \
+    --tag "v1.0.0" \
+    --base-dir "$WORKSPACE" \
+    --install-dir "$INSTALL_DIR" \
+    --backup-dir "$BACKUP_DIR" \
+    --yes \
+    --no-pull)"
+
+  assert_contains "$output" "Warning: downgrading from v2.0.0 -> v1.0.0"
+  assert_contains "$("${INSTALL_DIR}/runner" --version)" "1.0.0"
+  assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'oxydra_vm = "registry.example.com/acme/oxydra-vm:v1.0.0" # keep comment'
+  assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'shell_vm  = "docker.io/acme/shell-vm:v1.0.0"'
+}
+
+test_skip_config_omits_config_directory() {
+  setup_case
+  create_release_fixture "v2.0.0" "2.0.0"
+
+  local output
+  output="$(run_installer_capture 0 \
+    --tag "v2.0.0" \
+    --base-dir "$WORKSPACE" \
+    --install-dir "$INSTALL_DIR" \
+    --backup-dir "$BACKUP_DIR" \
+    --yes \
+    --no-pull \
+    --skip-config)"
+
+  assert_executable "${INSTALL_DIR}/runner"
+  assert_executable "${INSTALL_DIR}/oxydra-vm"
+  assert_file_not_exists "${WORKSPACE}/.oxydra"
+  assert_contains "$output" "Skipping config initialization and update (--skip-config)"
+  assert_not_contains "$output" "Update these values before first run"
+}
+
+test_overwrite_config_replaces_existing() {
+  setup_case
+  create_release_fixture "v2.0.0" "2.0.0"
+  setup_existing_install "1.0.0"
+  setup_existing_config
+
+  local output
+  output="$(run_installer_capture 0 \
+    --tag "v2.0.0" \
+    --base-dir "$WORKSPACE" \
+    --install-dir "$INSTALL_DIR" \
+    --backup-dir "$BACKUP_DIR" \
+    --yes \
+    --no-pull \
+    --overwrite-config)"
+
+  # Config should be replaced with template defaults (ghcr.io, not custom registry)
+  assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'oxydra_vm = "ghcr.io/shantanugoel/oxydra-vm:v2.0.0"'
+  assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'shell_vm  = "ghcr.io/shantanugoel/shell-vm:v2.0.0"'
+  # No .new templates since config was overwritten (fresh template path)
+  assert_file_not_exists "${WORKSPACE}/.oxydra/runner.toml.v2.0.0.new"
+}
+
+test_rollback_after_partial_binary_install() {
+  # Fail on a LATER binary (shell-daemon) so runner + oxydra-vm are already
+  # overwritten with new versions. Rollback must restore ALL of them.
+  setup_case
+  create_release_fixture "v2.0.0" "2.0.0"
+  setup_existing_install "1.0.0"
+  setup_existing_config
+
+  export MOCK_INSTALL_FAIL_ONCE=1
+  export MOCK_INSTALL_FAIL_ON_BINARY=shell-daemon
+
+  local output
+  output="$(run_installer_capture 1 \
+    --tag "v2.0.0" \
+    --base-dir "$WORKSPACE" \
+    --install-dir "$INSTALL_DIR" \
+    --backup-dir "$BACKUP_DIR" \
+    --yes \
+    --no-pull)"
+
+  assert_contains "$output" "Installation failed. Restore from backup? [auto-yes]"
+  assert_contains "$output" "Rollback complete."
+  # All binaries must be restored to old version, including runner which was
+  # successfully overwritten before shell-daemon failed.
+  assert_contains "$("${INSTALL_DIR}/runner" --version)" "1.0.0"
+  assert_contains "$("${INSTALL_DIR}/oxydra-vm")" "old-oxydra-vm 1.0.0"
+  assert_contains "$("${INSTALL_DIR}/shell-daemon")" "old-shell-daemon 1.0.0"
+  assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'oxydra_vm = "registry.example.com/acme/oxydra-vm:old-custom" # keep comment'
+}
+
+test_latest_tag_resolution_without_explicit_tag() {
+  setup_case
+  create_release_fixture "v3.0.0" "3.0.0"
+  export MOCK_LATEST_TAG="v3.0.0"
+
+  local output
+  output="$(run_installer_capture 0 \
+    --base-dir "$WORKSPACE" \
+    --install-dir "$INSTALL_DIR" \
+    --backup-dir "$BACKUP_DIR" \
+    --yes \
+    --no-pull)"
+
+  assert_contains "$output" "Installing Oxydra v3.0.0"
+  assert_executable "${INSTALL_DIR}/runner"
+  assert_contains "$("${INSTALL_DIR}/runner" --version)" "3.0.0"
+  assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" ':v3.0.0"'
+}
+
+test_backup_rotation_keeps_three() {
+  setup_case
+  create_release_fixture "v1.1.0" "1.1.0"
+  create_release_fixture "v1.2.0" "1.2.0"
+  create_release_fixture "v1.3.0" "1.3.0"
+  create_release_fixture "v1.4.0" "1.4.0"
+
+  # Install sequence: 1.0.0 -> 1.1.0 -> 1.2.0 -> 1.3.0 -> 1.4.0
+  # Creates 4 backups; rotation should prune the oldest, keeping 3.
+  setup_existing_install "1.0.0"
+  run_installer_capture 0 --tag "v1.1.0" --base-dir "$WORKSPACE" --install-dir "$INSTALL_DIR" --backup-dir "$BACKUP_DIR" --yes --no-pull --skip-config >/dev/null
+  run_installer_capture 0 --tag "v1.2.0" --base-dir "$WORKSPACE" --install-dir "$INSTALL_DIR" --backup-dir "$BACKUP_DIR" --yes --no-pull --skip-config >/dev/null
+  run_installer_capture 0 --tag "v1.3.0" --base-dir "$WORKSPACE" --install-dir "$INSTALL_DIR" --backup-dir "$BACKUP_DIR" --yes --no-pull --skip-config >/dev/null
+  run_installer_capture 0 --tag "v1.4.0" --base-dir "$WORKSPACE" --install-dir "$INSTALL_DIR" --backup-dir "$BACKUP_DIR" --yes --no-pull --skip-config >/dev/null
+
+  local backup_count
+  backup_count="$(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+  assert_equals "3" "$backup_count"
+}
+
+test_multi_user_daemon_stop_and_restart() {
+  setup_case
+  create_release_fixture "v2.0.0" "2.0.0"
+  setup_existing_install "1.0.0"
+  setup_existing_config_multi_user
+
+  # Create socket files for both users so they are detected as active
+  mkdir -p "${WORKSPACE}/.oxydra/workspaces/alice/ipc"
+  : > "${WORKSPACE}/.oxydra/workspaces/alice/ipc/runner-control.sock"
+  mkdir -p "${WORKSPACE}/.oxydra/workspaces/bob/ipc"
+  : > "${WORKSPACE}/.oxydra/workspaces/bob/ipc/runner-control.sock"
+
+  local output
+  output="$(run_installer_capture 0 \
+    --tag "v2.0.0" \
+    --base-dir "$WORKSPACE" \
+    --install-dir "$INSTALL_DIR" \
+    --backup-dir "$BACKUP_DIR" \
+    --yes \
+    --no-pull)"
+
+  assert_contains "$output" "alice"
+  assert_contains "$output" "bob"
+  assert_contains "$output" "Stop it now? [auto-yes]"
+  assert_contains "$output" "Restart the runner daemon for user(s):"
+  # Verify both users were restarted
+  assert_file_contains_literal "${RUNNER_START_LOG}" "alice"
+  assert_file_contains_literal "${RUNNER_START_LOG}" "bob"
+}
+
+test_upgrade_preserves_custom_registry_with_port() {
+  setup_case
+  create_release_fixture "v2.0.0" "2.0.0"
+  setup_existing_install "1.0.0"
+
+  mkdir -p "${WORKSPACE}/.oxydra/users"
+  cat > "${WORKSPACE}/.oxydra/runner.toml" <<'EOF'
+config_version = "1.0.1"
+workspace_root = "workspaces"
+default_tier = "container"
+
+[guest_images]
+oxydra_vm = "myregistry.local:5000/custom/oxydra-vm:v1.0.0"
+shell_vm  = "myregistry.local:5000/custom/shell-vm:v1.0.0"
+
+[users.alice]
+config_path = "users/alice.toml"
+EOF
+  cat > "${WORKSPACE}/.oxydra/agent.toml" <<'EOF'
+config_version = "1.0.0"
+[selection]
+provider = "openai"
+model = "gpt-4o-mini"
+EOF
+  cat > "${WORKSPACE}/.oxydra/users/alice.toml" <<'EOF'
+config_version = "1.0.1"
+EOF
+
+  local output
+  output="$(run_installer_capture 0 \
+    --tag "v2.0.0" \
+    --base-dir "$WORKSPACE" \
+    --install-dir "$INSTALL_DIR" \
+    --backup-dir "$BACKUP_DIR" \
+    --yes \
+    --no-pull)"
+
+  # Port-based registry must be preserved; only the tag after last colon changes
+  assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'oxydra_vm = "myregistry.local:5000/custom/oxydra-vm:v2.0.0"'
+  assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'shell_vm  = "myregistry.local:5000/custom/shell-vm:v2.0.0"'
+}
+
+test_noninteractive_stdin_aborts_when_daemon_running() {
+  # When running via curl|bash (stdin not a terminal) without --yes,
+  # the script must abort cleanly instead of hanging or silently proceeding.
+  setup_case
+  create_release_fixture "v2.0.0" "2.0.0"
+  setup_existing_install "1.0.0"
+  setup_existing_config
+
+  mkdir -p "${WORKSPACE}/.oxydra/workspaces/alice/ipc"
+  : > "${WORKSPACE}/.oxydra/workspaces/alice/ipc/runner-control.sock"
+
+  # Redirect stdin from /dev/null to simulate piped (non-interactive) mode.
+  # Do NOT pass --yes. The script should refuse to stop the daemon.
+  local output status
+  status=0
+  output="$("${INSTALL_SCRIPT}" \
+    --tag "v2.0.0" \
+    --base-dir "$WORKSPACE" \
+    --install-dir "$INSTALL_DIR" \
+    --backup-dir "$BACKUP_DIR" \
+    --no-pull < /dev/null 2>&1)" || status=$?
+
+  [[ "$status" -ne 0 ]] || {
+    echo "Assertion failed: expected non-zero exit for non-interactive with daemon" >&2
+    return 1
+  }
+  assert_contains "$output" "could not stop running daemon"
+  # Binaries must remain untouched
+  assert_contains "$("${INSTALL_DIR}/runner" --version)" "1.0.0"
+}
+
+test_base_dir_auto_created() {
+  setup_case
+  create_release_fixture "v2.0.0" "2.0.0"
+
+  local new_base="${CASE_ROOT}/deep/nested/project"
+
+  local output
+  output="$(run_installer_capture 0 \
+    --tag "v2.0.0" \
+    --base-dir "$new_base" \
+    --install-dir "$INSTALL_DIR" \
+    --backup-dir "$BACKUP_DIR" \
+    --yes \
+    --no-pull)"
+
+  assert_file_exists "${new_base}/.oxydra/runner.toml"
+  assert_file_exists "${new_base}/.oxydra/agent.toml"
+  assert_executable "${INSTALL_DIR}/runner"
+}
+
 run_case() {
   local name="$1"
   TOTAL_COUNT=$((TOTAL_COUNT + 1))
   printf '==> %s\n' "$name"
 
+  local status=0
+  set +e
   ( set -euo pipefail; "$name" )
-  local status=$?
+  status=$?
+  set -e
 
   if [[ "$status" -eq 0 ]]; then
     PASS_COUNT=$((PASS_COUNT + 1))
@@ -685,6 +994,16 @@ main() {
   run_case test_rollback_restores_after_failed_install_step
   run_case test_docker_prepull_runs_when_not_disabled
   run_case test_no_pull_flag_skips_docker_prepull
+  run_case test_downgrade_prints_warning
+  run_case test_skip_config_omits_config_directory
+  run_case test_overwrite_config_replaces_existing
+  run_case test_rollback_after_partial_binary_install
+  run_case test_latest_tag_resolution_without_explicit_tag
+  run_case test_backup_rotation_keeps_three
+  run_case test_multi_user_daemon_stop_and_restart
+  run_case test_upgrade_preserves_custom_registry_with_port
+  run_case test_noninteractive_stdin_aborts_when_daemon_running
+  run_case test_base_dir_auto_created
 
   printf 'Installer test summary: %d passed, %d failed, %d total\n' "$PASS_COUNT" "$FAIL_COUNT" "$TOTAL_COUNT"
   if [[ "$FAIL_COUNT" -ne 0 ]]; then
