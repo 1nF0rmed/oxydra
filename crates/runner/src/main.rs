@@ -12,6 +12,8 @@ use runner::{
 use thiserror::Error;
 use types::{RunnerControl, RunnerControlResponse, init_tracing};
 
+mod update_check;
+
 const DEFAULT_RUNNER_CONFIG_PATH: &str = ".oxydra/runner.toml";
 const TUI_BINARY_NAME: &str = "oxydra-tui";
 const GATEWAY_ENDPOINT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -31,6 +33,12 @@ enum CliCommand {
     Status,
     /// Restart the runner daemon (stop then start)
     Restart,
+    /// Check whether a newer Oxydra release is available on GitHub
+    CheckUpdate {
+        /// Include pre-release versions in the check
+        #[arg(long)]
+        pre_release: bool,
+    },
 }
 
 #[derive(Debug, Clone, Subcommand, PartialEq, Eq)]
@@ -148,6 +156,9 @@ fn run() -> Result<(), CliError> {
         Some(CliCommand::Stop) => return handle_lifecycle(LifecycleAction::Stop, &args),
         Some(CliCommand::Status) => return handle_lifecycle(LifecycleAction::Status, &args),
         Some(CliCommand::Restart) => return handle_lifecycle(LifecycleAction::Restart, &args),
+        Some(CliCommand::CheckUpdate { pre_release }) => {
+            return handle_check_update(*pre_release, &args.config_path);
+        }
         None => {}
     }
 
@@ -243,6 +254,49 @@ fn handle_catalog_action(action: CatalogAction) -> Result<(), CliError> {
     }
 }
 
+fn handle_check_update(include_prerelease: bool, config_path: &Path) -> Result<(), CliError> {
+    // Always fetch live data for an explicit check-update (use_cache = false).
+    match update_check::run_check(false, include_prerelease) {
+        Some(outcome) => {
+            println!("Current version: {}", outcome.current_version);
+            println!("Latest version:  {}", outcome.latest_version);
+            if outcome.update_available {
+                println!(
+                    "Update available! Run: install-release.sh --tag v{}",
+                    outcome.latest_version
+                );
+            } else {
+                println!("You are up to date.");
+            }
+        }
+        None => {
+            eprintln!(
+                "warning: could not reach GitHub to check for updates \
+                 (network unavailable or rate limited)"
+            );
+        }
+    }
+
+    // Binary-vs-config image tag mismatch check (best-effort; load config
+    // only if it exists so the command works without a runner.toml too).
+    if config_path.exists() {
+        if let Ok(runner) = Runner::from_global_config_path(config_path) {
+            let mismatches =
+                update_check::check_image_tag_mismatches(&runner.global_config().guest_images);
+            for m in &mismatches {
+                eprintln!(
+                    "Warning: Binary version ({}) does not match guest image tag ({}) \
+                     in runner.toml field `{}` (image: {}).\n  \
+                     Update [guest_images] tags or re-run install-release.sh.",
+                    m.binary_version, m.image_tag, m.field, m.image_ref,
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn resolve_user_id(user_id: Option<String>, runner: &Runner) -> Result<String, CliError> {
     if let Some(user_id) = user_id {
         return Ok(user_id);
@@ -291,6 +345,20 @@ fn handle_lifecycle(action: LifecycleAction, args: &CliArgs) -> Result<(), CliEr
 }
 
 fn server_start(runner: &Runner, user_id: &str, args: &CliArgs) -> Result<(), CliError> {
+    // Non-blocking update notice: use cached result so startup is never delayed.
+    // A separate thread performs the check to avoid blocking the main path.
+    std::thread::spawn(|| {
+        if let Some(outcome) = update_check::run_check(true, false) {
+            if outcome.update_available {
+                eprintln!(
+                    "[oxydra] Update available: v{} (current: v{}). \
+                     Run `runner check-update` for details.",
+                    outcome.latest_version, outcome.current_version,
+                );
+            }
+        }
+    });
+
     let extra_env = parse_extra_env_vars(&args.env_vars, args.env_file.as_deref())?;
     let mut startup = runner.start_user(RunnerStartRequest {
         user_id: user_id.to_owned(),
@@ -932,6 +1000,26 @@ mod tests {
     fn parse_cli_args_accepts_restart_subcommand() {
         let args = CliArgs::try_parse_from(["runner", "restart"]).expect("restart should parse");
         assert_eq!(args.command, Some(CliCommand::Restart));
+    }
+
+    #[test]
+    fn parse_cli_args_accepts_check_update_subcommand() {
+        let args = CliArgs::try_parse_from(["runner", "check-update"])
+            .expect("check-update should parse");
+        assert_eq!(
+            args.command,
+            Some(CliCommand::CheckUpdate { pre_release: false })
+        );
+    }
+
+    #[test]
+    fn parse_cli_args_accepts_check_update_with_pre_release() {
+        let args = CliArgs::try_parse_from(["runner", "check-update", "--pre-release"])
+            .expect("check-update --pre-release should parse");
+        assert_eq!(
+            args.command,
+            Some(CliCommand::CheckUpdate { pre_release: true })
+        );
     }
 
     #[test]
