@@ -8,7 +8,7 @@ use types::{RunnerControl, RunnerControlResponse};
 
 use super::response::{ApiError, ok_response};
 use super::state::WebState;
-use crate::{RUNNER_CONTROL_SOCKET_NAME, send_control_to_daemon_async};
+use crate::send_control_to_daemon_async;
 
 #[derive(Serialize)]
 struct UserStatus {
@@ -34,8 +34,9 @@ struct StatusResponse {
 /// `GET /api/v1/status` — Aggregated status for all registered users.
 pub async fn get_status(State(state): State<Arc<WebState>>) -> impl IntoResponse {
     let mut users = Vec::new();
+    let global_config = state.latest_global_config_or_cached();
 
-    for user_id in state.global_config.users.keys() {
+    for user_id in global_config.users.keys() {
         let status = probe_user_daemon(&state, user_id).await;
         users.push(status);
     }
@@ -48,7 +49,8 @@ pub async fn get_user_status(
     State(state): State<Arc<WebState>>,
     Path(user_id): Path<String>,
 ) -> impl IntoResponse {
-    if !state.global_config.users.contains_key(&user_id) {
+    let global_config = state.latest_global_config_or_cached();
+    if !global_config.users.contains_key(&user_id) {
         return ApiError::with_status(
             axum::http::StatusCode::NOT_FOUND,
             "not_found",
@@ -63,7 +65,7 @@ pub async fn get_user_status(
 
 /// Try to reach a user's daemon via the control socket and extract status.
 async fn probe_user_daemon(state: &WebState, user_id: &str) -> UserStatus {
-    let socket_path = control_socket_path(state, user_id);
+    let socket_path = state.control_socket_path(user_id);
 
     if !socket_path.exists() {
         return UserStatus {
@@ -115,15 +117,6 @@ async fn probe_user_daemon(state: &WebState, user_id: &str) -> UserStatus {
     }
 }
 
-/// Compute the control socket path for a user.
-fn control_socket_path(state: &WebState, user_id: &str) -> std::path::PathBuf {
-    state
-        .workspace_root
-        .join(user_id)
-        .join("ipc")
-        .join(RUNNER_CONTROL_SOCKET_NAME)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,13 +130,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("runner.toml");
         let config = types::RunnerGlobalConfig::default();
-        let state = Arc::new(WebState::new(config, config_path));
+        let state = Arc::new(WebState::new(
+            config,
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
         let app = crate::web::build_router(state);
 
         let resp = app
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/status")
+                    .header("host", "127.0.0.1:9400")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -174,13 +172,18 @@ mod tests {
             users,
             ..Default::default()
         };
-        let state = Arc::new(WebState::new(config, config_path));
+        let state = Arc::new(WebState::new(
+            config,
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
         let app = crate::web::build_router(state);
 
         let resp = app
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/status")
+                    .header("host", "127.0.0.1:9400")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -203,13 +206,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("runner.toml");
         let config = types::RunnerGlobalConfig::default();
-        let state = Arc::new(WebState::new(config, config_path));
+        let state = Arc::new(WebState::new(
+            config,
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
         let app = crate::web::build_router(state);
 
         let resp = app
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/status/unknown")
+                    .header("host", "127.0.0.1:9400")
                     .body(Body::empty())
                     .unwrap(),
             )

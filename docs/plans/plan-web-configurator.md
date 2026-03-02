@@ -658,57 +658,59 @@ Alpine.js is vendored (downloaded and placed in `static/js/vendor/alpine.min.js`
 
 ### Phase 3: Config Write + Validation
 
+**Status:** Complete
+
 **Goal:** The web UI can edit and save configuration files.
 
 **Steps:**
 
-1. **Create `runner/src/web/config_write.rs`** — Write infrastructure:
+1. ✅ **Create `runner/src/web/config_write.rs`** — Write infrastructure:
    - `backup_file(path: &Path) -> Result<PathBuf>` — Creates timestamped backup.
    - `prune_backups(path: &Path, keep: usize)` — Removes old backups.
    - `atomic_write(path: &Path, content: &str) -> Result<()>` — Write to temp + fsync + rename.
    - `apply_json_merge_patch(document: &mut DocumentMut, patch: &serde_json::Value, secret_sentinel: &str)` — Walks the patch and applies changes to the `toml_edit` document, skipping sentinel values.
    - `compute_changed_fields(before: &serde_json::Value, after: &serde_json::Value) -> Vec<String>` — Returns dot-separated paths of fields that changed.
 
-2. **Implement PATCH endpoints**:
+2. ✅ **Implement PATCH endpoints**:
    - `PATCH /api/v1/config/runner` — Read current file (or empty doc), apply merge patch, validate typed struct, atomic write with backup.
    - `PATCH /api/v1/config/agent` — Same for agent.toml.
    - `PATCH /api/v1/config/users/{user_id}` — Same for user config.
    - All PATCH responses include: `changed_fields`, `backup_path`, `restart_required` (true if daemon is running).
 
-3. **Implement validation endpoints**:
+3. ✅ **Implement validation endpoints**:
    - `POST /api/v1/config/runner/validate` — Apply patch in memory, validate, return result without writing.
    - `POST /api/v1/config/agent/validate` — Same.
    - `POST /api/v1/config/users/{user_id}/validate` — Same.
 
-4. **Implement user management endpoints**:
+4. ✅ **Implement user management endpoints**:
    - `POST /api/v1/config/users` — Body: `{ "user_id": "...", "config_path": "..." }`. Creates user TOML with defaults, adds user registration to runner.toml. Both writes use backup+atomic.
    - `DELETE /api/v1/config/users/{user_id}` — Query param: `delete_config_file=true/false`. Removes from runner.toml, optionally deletes config file.
 
-5. **Create `runner/src/web/middleware.rs`** — Security middleware:
+5. ✅ **Create `runner/src/web/middleware.rs`** — Security middleware:
    - `host_validation_layer()` — Rejects requests where `Host` header doesn't match bind address.
    - `content_type_enforcement()` — Rejects mutation requests without `application/json` content type.
    - `auth_layer()` — When auth is enabled, validates `Authorization: Bearer <token>` with constant-time comparison.
 
-6. **Update config editor frontend to be editable**:
+6. ✅ **Update config editor frontend to be editable**:
    - Fields become editable inputs (text, number, boolean toggle, select).
    - "Save" button appears when there are unsaved changes.
    - Save flow: validate → show diff → confirm → PATCH → toast notification.
    - "Restart required" banner shown after saving if daemon is running.
    - Secret fields: show `__UNCHANGED__` placeholder. Only send actual value if user explicitly edits.
 
-7. **Build Onboarding Wizard** (`static/js/onboarding.js`):
+7. ✅ **Build Onboarding Wizard** (`static/js/onboarding.js`):
    - Step-by-step guided setup using the same PATCH endpoints.
    - Provider setup step tries to resolve the API key env var and shows a green checkmark.
 
 **Verification gate:**
-- Config changes are saved to disk with backups created.
-- TOML comments are preserved after edits (tested with a file containing comments).
-- Invalid configs are rejected with clear error messages.
-- New user registration creates both files correctly.
-- Secret sentinel behavior works correctly (unchanged secrets are preserved).
-- Host header validation rejects mismatched hosts.
-- Auth middleware blocks unauthenticated requests when enabled.
-- All tests pass, no clippy warnings.
+- ✅ Config changes are saved to disk with backups created.
+- ✅ TOML comments are preserved after edits (tested with a file containing comments).
+- ✅ Invalid configs are rejected with clear error messages.
+- ✅ New user registration creates both files correctly.
+- ✅ Secret sentinel behavior works correctly (unchanged secrets are preserved).
+- ✅ Host header validation rejects mismatched hosts.
+- ✅ Auth middleware blocks unauthenticated requests when enabled.
+- ✅ All tests pass, no clippy warnings.
 
 ---
 

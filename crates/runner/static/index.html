@@ -5,59 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Oxydra Web Configurator</title>
   <link rel="stylesheet" href="/css/style.css">
+  <script defer src="/js/onboarding.js"></script>
   <script defer src="/js/app.js"></script>
   <script defer src="/js/vendor/alpine.min.js"></script>
 </head>
 <body x-data="app()">
   <div class="layout">
-    <!-- Navigation Sidebar -->
     <nav class="sidebar">
       <div class="sidebar-header">
-        <h1 class="logo">⚙ Oxydra</h1>
+        <h1 class="logo">Oxydra</h1>
         <span class="version" x-text="meta.version || ''"></span>
       </div>
       <ul class="nav-links">
-        <li>
-          <a href="#/" :class="{ active: currentPage === 'dashboard' }">
-            <span class="nav-icon">📊</span> Dashboard
-          </a>
-        </li>
-        <li>
-          <a href="#/config/agent" :class="{ active: currentPage === 'config-agent' }">
-            <span class="nav-icon">🤖</span> Agent Config
-          </a>
-        </li>
-        <li>
-          <a href="#/config/runner" :class="{ active: currentPage === 'config-runner' }">
-            <span class="nav-icon">🏗️</span> Runner Config
-          </a>
-        </li>
-        <li>
-          <a href="#/config/users" :class="{ active: currentPage === 'config-users' }">
-            <span class="nav-icon">👥</span> Users
-          </a>
-        </li>
-        <li>
-          <a href="#/logs" :class="{ active: currentPage === 'logs' }">
-            <span class="nav-icon">📋</span> Logs
-          </a>
-        </li>
+        <li><a href="#/" :class="{ active: currentPage === 'dashboard' }">Dashboard</a></li>
+        <li><a href="#/config/agent" :class="{ active: currentPage === 'config-agent' }">Agent Config</a></li>
+        <li><a href="#/config/runner" :class="{ active: currentPage === 'config-runner' }">Runner Config</a></li>
+        <li><a href="#/config/users" :class="{ active: currentPage === 'config-users' }">Users</a></li>
+        <li><a href="#/logs" :class="{ active: currentPage === 'logs' }">Logs</a></li>
       </ul>
       <div class="sidebar-footer">
         <div class="status-dot" :class="{ connected: connected }"></div>
-        <span x-text="connected ? 'Connected' : 'Connecting...'"></span>
+        <span x-text="connected ? 'Connected' : 'Disconnected'"></span>
       </div>
     </nav>
 
-    <!-- Main Content -->
     <main class="content">
-      <!-- Onboarding Banner -->
-      <div x-show="onboarding.needs_setup" class="banner banner-warning" x-cloak>
-        <strong>Setup Required</strong> — Some configuration is missing.
-        <a href="#/setup">Get Started →</a>
+      <div class="toast" :class="`toast-${toast.kind} ${toast.visible ? 'show' : ''}`" x-cloak>
+        <span x-text="toast.message"></span>
       </div>
 
-      <!-- Dashboard -->
+      <div x-show="restartNotice" class="banner banner-info" x-cloak>
+        <strong>Restart Required:</strong>
+        <span x-text="restartNotice"></span>
+      </div>
+
+      <div x-show="onboarding.needs_setup" class="banner banner-warning" x-cloak>
+        <strong>Setup Required</strong>
+        <span>Some required configuration is missing.</span>
+        <a href="#/setup">Open Setup Wizard</a>
+      </div>
+
       <div x-show="currentPage === 'dashboard'" x-cloak>
         <h2>Dashboard</h2>
         <div class="meta-info" x-show="meta.version">
@@ -68,9 +55,9 @@
 
         <h3>Registered Users</h3>
         <div x-show="statusUsers.length === 0" class="empty-state">
-          No users registered. <a href="#/config/users">Add a user →</a>
+          No users registered yet.
         </div>
-        <div class="card-grid">
+        <div class="card-grid" x-show="statusUsers.length > 0">
           <template x-for="user in statusUsers" :key="user.user_id">
             <div class="card">
               <div class="card-header">
@@ -78,107 +65,304 @@
                 <span class="badge" :class="user.daemon_running ? 'badge-success' : 'badge-muted'"
                       x-text="user.daemon_running ? 'Running' : 'Stopped'"></span>
               </div>
-              <div class="card-body" x-show="user.daemon_running">
-                <p x-show="user.sandbox_tier"><strong>Tier:</strong> <span x-text="user.sandbox_tier"></span></p>
-                <p x-show="user.shell_available !== null"><strong>Shell:</strong> <span x-text="user.shell_available ? 'Yes' : 'No'"></span></p>
-                <p x-show="user.browser_available !== null"><strong>Browser:</strong> <span x-text="user.browser_available ? 'Yes' : 'No'"></span></p>
-                <p x-show="user.message" class="text-muted"><span x-text="user.message"></span></p>
+              <div class="card-body">
+                <p><strong>Tier:</strong> <span x-text="user.sandbox_tier || 'n/a'"></span></p>
+                <p><strong>Shell:</strong> <span x-text="user.shell_available ? 'Yes' : 'No'"></span></p>
+                <p><strong>Browser:</strong> <span x-text="user.browser_available ? 'Yes' : 'No'"></span></p>
+                <p class="text-muted" x-show="user.message" x-text="user.message"></p>
               </div>
             </div>
           </template>
         </div>
       </div>
 
-      <!-- Agent Config -->
       <div x-show="currentPage === 'config-agent'" x-cloak>
         <h2>Agent Configuration</h2>
         <div x-show="loading" class="loading">Loading...</div>
-        <div x-show="!loading && agentConfig">
-          <div class="config-meta">
-            <span class="badge" :class="agentConfig?.file_exists ? 'badge-success' : 'badge-muted'"
-                  x-text="agentConfig?.file_exists ? 'File exists' : 'File not found (showing defaults)'"></span>
-            <span class="file-path" x-text="agentConfig?.file_path"></span>
-          </div>
-          <div class="config-viewer">
-            <template x-for="(value, key) in (agentConfig?.config || {})" :key="key">
-              <div class="config-section">
-                <h3 class="section-toggle" @click="toggleSection(key)" x-text="key"></h3>
-                <div x-show="openSections.includes(key)" class="section-content">
-                  <pre x-text="JSON.stringify(value, null, 2)"></pre>
-                </div>
+
+        <div class="config-meta" x-show="agentEditor">
+          <span class="badge" :class="agentEditor && agentEditor.fileExists ? 'badge-success' : 'badge-muted'"
+                x-text="agentEditor && agentEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
+          <span class="file-path" x-text="agentEditor && agentEditor.filePath"></span>
+        </div>
+
+        <div class="editor-panel" x-show="agentEditor">
+          <template x-for="field in ((agentEditor && agentEditor.fields) || [])" :key="field.path">
+            <div class="field-row">
+              <label class="field-label" x-text="field.path"></label>
+
+              <input x-show="field.type === 'string'" type="text" class="text-input"
+                     :value="field.value"
+                     @input="updateTextField(agentEditor, field, $event.target.value)">
+
+              <input x-show="field.type === 'number'" type="number" class="text-input"
+                     :value="field.value"
+                     @input="updateNumberField(agentEditor, field, $event.target.value)">
+
+              <label x-show="field.type === 'boolean'" class="switch-row">
+                <input type="checkbox" :checked="field.value"
+                       @change="updateBooleanField(agentEditor, field, $event.target.checked)">
+                <span x-text="field.value ? 'true' : 'false'"></span>
+              </label>
+
+              <div x-show="field.type === 'secret'" class="secret-row">
+                <input type="password" class="text-input" placeholder="********"
+                       :value="field.value"
+                       @input="updateTextField(agentEditor, field, $event.target.value)">
+                <button class="btn btn-muted" @click="clearSecretField(agentEditor, field)">Clear</button>
               </div>
-            </template>
-          </div>
+
+              <textarea x-show="field.type === 'json'" class="json-input"
+                        @input="updateJsonField(agentEditor, field, $event.target.value)"
+                        x-text="field.value"></textarea>
+
+              <p x-show="field.parseError" class="error-text" x-text="field.parseError"></p>
+            </div>
+          </template>
+        </div>
+
+        <div class="actions-row" x-show="agentEditor">
+          <button class="btn btn-primary" :disabled="saving || !editorHasChanges(agentEditor)" @click="saveAgentConfig()">Validate & Save</button>
+          <span class="text-muted" x-show="agentEditor && agentEditor.backupPath">Backup: <span x-text="agentEditor && agentEditor.backupPath"></span></span>
         </div>
       </div>
 
-      <!-- Runner Config -->
       <div x-show="currentPage === 'config-runner'" x-cloak>
         <h2>Runner Configuration</h2>
         <div x-show="loading" class="loading">Loading...</div>
-        <div x-show="!loading && runnerConfig">
-          <div class="config-meta">
-            <span class="badge" :class="runnerConfig?.file_exists ? 'badge-success' : 'badge-muted'"
-                  x-text="runnerConfig?.file_exists ? 'File exists' : 'File not found (showing defaults)'"></span>
-            <span class="file-path" x-text="runnerConfig?.file_path"></span>
+
+        <div class="config-meta" x-show="runnerEditor">
+          <span class="badge" :class="runnerEditor && runnerEditor.fileExists ? 'badge-success' : 'badge-muted'"
+                x-text="runnerEditor && runnerEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
+          <span class="file-path" x-text="runnerEditor && runnerEditor.filePath"></span>
+        </div>
+
+        <div class="editor-panel" x-show="runnerEditor">
+          <template x-for="field in ((runnerEditor && runnerEditor.fields) || [])" :key="field.path">
+            <div class="field-row">
+              <label class="field-label" x-text="field.path"></label>
+
+              <input x-show="field.type === 'string'" type="text" class="text-input"
+                     :value="field.value"
+                     @input="updateTextField(runnerEditor, field, $event.target.value)">
+
+              <input x-show="field.type === 'number'" type="number" class="text-input"
+                     :value="field.value"
+                     @input="updateNumberField(runnerEditor, field, $event.target.value)">
+
+              <label x-show="field.type === 'boolean'" class="switch-row">
+                <input type="checkbox" :checked="field.value"
+                       @change="updateBooleanField(runnerEditor, field, $event.target.checked)">
+                <span x-text="field.value ? 'true' : 'false'"></span>
+              </label>
+
+              <div x-show="field.type === 'secret'" class="secret-row">
+                <input type="password" class="text-input" placeholder="********"
+                       :value="field.value"
+                       @input="updateTextField(runnerEditor, field, $event.target.value)">
+                <button class="btn btn-muted" @click="clearSecretField(runnerEditor, field)">Clear</button>
+              </div>
+
+              <textarea x-show="field.type === 'json'" class="json-input"
+                        @input="updateJsonField(runnerEditor, field, $event.target.value)"
+                        x-text="field.value"></textarea>
+
+              <p x-show="field.parseError" class="error-text" x-text="field.parseError"></p>
+            </div>
+          </template>
+        </div>
+
+        <div class="actions-row" x-show="runnerEditor">
+          <button class="btn btn-primary" :disabled="saving || !editorHasChanges(runnerEditor)" @click="saveRunnerConfig()">Validate & Save</button>
+          <span class="text-muted" x-show="runnerEditor && runnerEditor.backupPath">Backup: <span x-text="runnerEditor && runnerEditor.backupPath"></span></span>
+        </div>
+      </div>
+
+      <div x-show="currentPage === 'config-users'" x-cloak>
+        <h2>Users</h2>
+
+        <div class="card">
+          <div class="card-header"><span>Add User</span></div>
+          <div class="card-body user-form-grid">
+            <label>
+              <span>User ID</span>
+              <input type="text" class="text-input" :value="newUser.user_id" @input="newUser.user_id = $event.target.value">
+            </label>
+            <label>
+              <span>Config Path</span>
+              <input type="text" class="text-input" :value="newUser.config_path" @input="newUser.config_path = $event.target.value">
+            </label>
+            <div class="actions-row">
+              <button class="btn btn-primary" :disabled="saving" @click="addUser()">Add User</button>
+            </div>
           </div>
-          <div class="config-viewer">
-            <template x-for="(value, key) in (runnerConfig?.config || {})" :key="key">
-              <div class="config-section">
-                <h3 class="section-toggle" @click="toggleSection(key)" x-text="key"></h3>
-                <div x-show="openSections.includes(key)" class="section-content">
-                  <pre x-text="JSON.stringify(value, null, 2)"></pre>
+        </div>
+
+        <div class="empty-state" x-show="userList.length === 0">No users registered yet.</div>
+        <table x-show="userList.length > 0" class="data-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Config Path</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="user in userList" :key="user.user_id">
+              <tr>
+                <td x-text="user.user_id"></td>
+                <td class="file-path" x-text="user.config_path"></td>
+                <td>
+                  <span class="badge" :class="(findUserStatus(user.user_id) && findUserStatus(user.user_id).daemon_running) ? 'badge-success' : 'badge-muted'"
+                        x-text="(findUserStatus(user.user_id) && findUserStatus(user.user_id).daemon_running) ? 'Running' : 'Stopped'"></span>
+                </td>
+                <td class="table-actions">
+                  <button class="btn btn-muted" @click="loadUserConfig(user.user_id)">Edit</button>
+                  <button class="btn btn-danger" @click="deleteUser(user.user_id)">Delete</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+
+        <div x-show="userEditor" class="user-editor-section">
+          <h3>User Config: <span x-text="selectedUserId"></span></h3>
+          <div class="config-meta">
+            <span class="badge" :class="userEditor && userEditor.fileExists ? 'badge-success' : 'badge-muted'"
+                  x-text="userEditor && userEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
+            <span class="file-path" x-text="userEditor && userEditor.filePath"></span>
+          </div>
+
+          <div class="editor-panel">
+            <template x-for="field in ((userEditor && userEditor.fields) || [])" :key="field.path">
+              <div class="field-row">
+                <label class="field-label" x-text="field.path"></label>
+
+                <input x-show="field.type === 'string'" type="text" class="text-input"
+                       :value="field.value"
+                       @input="updateTextField(userEditor, field, $event.target.value)">
+
+                <input x-show="field.type === 'number'" type="number" class="text-input"
+                       :value="field.value"
+                       @input="updateNumberField(userEditor, field, $event.target.value)">
+
+                <label x-show="field.type === 'boolean'" class="switch-row">
+                  <input type="checkbox" :checked="field.value"
+                         @change="updateBooleanField(userEditor, field, $event.target.checked)">
+                  <span x-text="field.value ? 'true' : 'false'"></span>
+                </label>
+
+                <div x-show="field.type === 'secret'" class="secret-row">
+                  <input type="password" class="text-input" placeholder="********"
+                         :value="field.value"
+                         @input="updateTextField(userEditor, field, $event.target.value)">
+                  <button class="btn btn-muted" @click="clearSecretField(userEditor, field)">Clear</button>
                 </div>
+
+                <textarea x-show="field.type === 'json'" class="json-input"
+                          @input="updateJsonField(userEditor, field, $event.target.value)"
+                          x-text="field.value"></textarea>
+
+                <p x-show="field.parseError" class="error-text" x-text="field.parseError"></p>
               </div>
             </template>
           </div>
-        </div>
-      </div>
 
-      <!-- Users -->
-      <div x-show="currentPage === 'config-users'" x-cloak>
-        <h2>Users</h2>
-        <div x-show="loading" class="loading">Loading...</div>
-        <div x-show="!loading">
-          <div x-show="userList.length === 0" class="empty-state">
-            No users registered yet.
+          <div class="actions-row">
+            <button class="btn btn-primary" :disabled="saving || !editorHasChanges(userEditor)" @click="saveUserConfig()">Validate & Save</button>
+            <span class="text-muted" x-show="userEditor && userEditor.backupPath">Backup: <span x-text="userEditor && userEditor.backupPath"></span></span>
           </div>
-          <table x-show="userList.length > 0" class="data-table">
-            <thead>
-              <tr>
-                <th>User ID</th>
-                <th>Config Path</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <template x-for="user in userList" :key="user.user_id">
-                <tr>
-                  <td x-text="user.user_id"></td>
-                  <td x-text="user.config_path" class="file-path"></td>
-                  <td>
-                    <span class="badge"
-                          :class="findUserStatus(user.user_id)?.daemon_running ? 'badge-success' : 'badge-muted'"
-                          x-text="findUserStatus(user.user_id)?.daemon_running ? 'Running' : 'Stopped'">
-                    </span>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
         </div>
       </div>
 
-      <!-- Logs (placeholder for Phase 4) -->
       <div x-show="currentPage === 'logs'" x-cloak>
         <h2>Logs</h2>
-        <p class="text-muted">Log viewer will be available in a future update.</p>
+        <p class="text-muted">Log viewing lands in Phase 4. Config save and lifecycle status are available now.</p>
       </div>
 
-      <!-- Setup Wizard (placeholder for Phase 3) -->
       <div x-show="currentPage === 'setup'" x-cloak>
         <h2>Setup Wizard</h2>
-        <p class="text-muted">The onboarding wizard will be available in a future update.</p>
+
+        <div class="wizard-card">
+          <div class="wizard-header">
+            <span class="badge badge-muted" x-text="`Step ${onboardingWizard.step} of 5`"></span>
+            <h3 x-text="onboardingStepLabel()"></h3>
+          </div>
+
+          <div class="wizard-step" x-show="onboardingWizard.step === 1">
+            <p>Welcome to Oxydra Web Configurator. This wizard creates the minimum configuration for a working setup.</p>
+          </div>
+
+          <div class="wizard-step" x-show="onboardingWizard.step === 2">
+            <label>
+              <span>Workspace Root</span>
+              <input type="text" class="text-input" :value="onboardingWizard.runnerWorkspaceRoot"
+                     @input="onboardingWizard.runnerWorkspaceRoot = $event.target.value">
+            </label>
+          </div>
+
+          <div class="wizard-step" x-show="onboardingWizard.step === 3">
+            <label>
+              <span>User ID</span>
+              <input type="text" class="text-input" :value="onboardingWizard.userId"
+                     @input="onboardingWizard.userId = $event.target.value">
+            </label>
+            <label>
+              <span>User Config Path</span>
+              <input type="text" class="text-input" :value="onboardingWizard.userConfigPath"
+                     @input="onboardingWizard.userConfigPath = $event.target.value">
+            </label>
+            <button class="btn btn-muted" @click="onboardingAutofillUserPath()">Use Suggested Path</button>
+          </div>
+
+          <div class="wizard-step" x-show="onboardingWizard.step === 4">
+            <label>
+              <span>Provider Name</span>
+              <input type="text" class="text-input" :value="onboardingWizard.providerName"
+                     @input="onboardingWizard.providerName = $event.target.value">
+            </label>
+            <label>
+              <span>Provider Type</span>
+              <select class="text-input" :value="onboardingWizard.providerType"
+                      @change="onboardingWizard.providerType = $event.target.value">
+                <option value="openai">openai</option>
+                <option value="anthropic">anthropic</option>
+                <option value="gemini">gemini</option>
+                <option value="openai_responses">openai_responses</option>
+              </select>
+            </label>
+            <label>
+              <span>API Key (optional if env var is set)</span>
+              <input type="password" class="text-input" :value="onboardingWizard.providerApiKey"
+                     @input="onboardingWizard.providerApiKey = $event.target.value">
+            </label>
+            <label>
+              <span>API Key Env Var</span>
+              <input type="text" class="text-input" :value="onboardingWizard.providerApiKeyEnv"
+                     @input="onboardingWizard.providerApiKeyEnv = $event.target.value">
+            </label>
+            <p class="text-success" x-show="onboardingWizard.providerEnvResolved">Provider credentials appear to be resolved.</p>
+          </div>
+
+          <div class="wizard-step" x-show="onboardingWizard.step === 5">
+            <p>Review your setup choices:</p>
+            <ul class="summary-list">
+              <template x-for="line in onboardingSummary()" :key="line">
+                <li x-text="line"></li>
+              </template>
+            </ul>
+            <p class="text-success" x-show="onboardingWizard.done">Setup is complete.</p>
+          </div>
+
+          <p class="error-text" x-show="onboardingWizard.error" x-text="onboardingWizard.error"></p>
+
+          <div class="wizard-actions">
+            <button class="btn btn-muted" :disabled="onboardingWizard.busy || onboardingWizard.step === 1" @click="onboardingPreviousStep()">Back</button>
+            <button class="btn btn-primary" :disabled="onboardingWizard.busy" @click="onboardingNextStep()"
+                    x-text="onboardingWizard.step === 5 ? 'Finish' : 'Next'"></button>
+          </div>
+        </div>
       </div>
     </main>
   </div>

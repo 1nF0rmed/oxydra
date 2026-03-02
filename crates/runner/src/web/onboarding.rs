@@ -28,7 +28,7 @@ struct OnboardingChecks {
 /// `GET /api/v1/onboarding/status` — Detect first-run setup needs.
 pub async fn get_onboarding_status(State(state): State<Arc<WebState>>) -> impl IntoResponse {
     let runner_config_exists = state.config_path.exists();
-    let has_users = !state.global_config.users.is_empty();
+    let has_users = !state.latest_global_config_or_cached().users.is_empty();
 
     let config_dir = state.config_dir();
     let agent_path = config_dir.join("agent.toml");
@@ -92,13 +92,18 @@ mod tests {
         let config_path = dir.path().join("runner.toml");
         // Don't create the file — simulates fresh install
         let config = types::RunnerGlobalConfig::default();
-        let state = Arc::new(WebState::new(config, config_path));
+        let state = Arc::new(WebState::new(
+            config,
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
         let app = crate::web::build_router(state);
 
         let resp = app
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/onboarding/status")
+                    .header("host", "127.0.0.1:9400")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -153,13 +158,18 @@ api_key = "sk-test-key"
                 config_path: "alice.toml".to_owned(),
             },
         );
-        let state = Arc::new(WebState::new(config, config_path));
+        let state = Arc::new(WebState::new(
+            config,
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
         let app = crate::web::build_router(state);
 
         let resp = app
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/onboarding/status")
+                    .header("host", "127.0.0.1:9400")
                     .body(Body::empty())
                     .unwrap(),
             )

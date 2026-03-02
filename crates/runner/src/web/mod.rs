@@ -1,5 +1,7 @@
 mod config_read;
+mod config_write;
 mod masking;
+mod middleware;
 mod onboarding;
 mod response;
 mod state;
@@ -9,7 +11,12 @@ mod status;
 use std::path::Path;
 use std::sync::Arc;
 
-use axum::{Router, extract::State, routing::get};
+use axum::{
+    Router,
+    extract::State,
+    middleware::from_fn_with_state,
+    routing::{get, post},
+};
 use serde::Serialize;
 use thiserror::Error;
 use tokio::net::TcpListener;
@@ -46,7 +53,7 @@ pub async fn run_web_server(
         .unwrap_or(&global_config.web.bind)
         .to_owned();
 
-    let web_state = Arc::new(WebState::new(global_config, config_path));
+    let web_state = Arc::new(WebState::new(global_config, config_path, bind.clone()));
     let app = build_router(web_state);
 
     let listener = TcpListener::bind(&bind)
@@ -70,15 +77,41 @@ pub async fn run_web_server(
 fn build_router(state: Arc<WebState>) -> Router {
     let api = Router::new()
         .route("/meta", get(meta_handler))
-        // Phase 2: config read endpoints
-        .route("/config/runner", get(config_read::get_runner_config))
-        .route("/config/agent", get(config_read::get_agent_config))
+        // Phase 2 + 3: config read/write endpoints
+        .route(
+            "/config/runner",
+            get(config_read::get_runner_config).patch(config_write::patch_runner_config),
+        )
+        .route(
+            "/config/runner/validate",
+            post(config_write::validate_runner_config),
+        )
+        .route(
+            "/config/agent",
+            get(config_read::get_agent_config).patch(config_write::patch_agent_config),
+        )
         .route(
             "/config/agent/effective",
             get(config_read::get_agent_config_effective),
         )
-        .route("/config/users", get(config_read::list_users))
-        .route("/config/users/{user_id}", get(config_read::get_user_config))
+        .route(
+            "/config/agent/validate",
+            post(config_write::validate_agent_config),
+        )
+        .route(
+            "/config/users",
+            get(config_read::list_users).post(config_write::create_user),
+        )
+        .route(
+            "/config/users/{user_id}",
+            get(config_read::get_user_config)
+                .patch(config_write::patch_user_config)
+                .delete(config_write::delete_user),
+        )
+        .route(
+            "/config/users/{user_id}/validate",
+            post(config_write::validate_user_config),
+        )
         // Phase 2: status endpoints
         .route("/status", get(status::get_status))
         .route("/status/{user_id}", get(status::get_user_status))
@@ -89,6 +122,15 @@ fn build_router(state: Arc<WebState>) -> Router {
         .nest("/api/v1", api)
         .route("/", get(static_files::serve_index))
         .route("/{*path}", get(static_files::serve_static))
+        .layer(from_fn_with_state(state.clone(), middleware::auth_layer))
+        .layer(from_fn_with_state(
+            state.clone(),
+            middleware::content_type_enforcement,
+        ))
+        .layer(from_fn_with_state(
+            state.clone(),
+            middleware::host_validation_layer,
+        ))
         .with_state(state)
 }
 
@@ -118,14 +160,40 @@ async fn shutdown_signal() {
 mod tests {
     use super::*;
     use axum::body::Body;
-    use axum::http::{Request, StatusCode};
+    use axum::http::{Method, Request, StatusCode};
     use tower::ServiceExt;
     use types::RunnerGlobalConfig;
 
     fn test_state() -> Arc<WebState> {
         let config = RunnerGlobalConfig::default();
         let config_path = std::path::PathBuf::from("/tmp/test-runner.toml");
-        Arc::new(WebState::new(config, config_path))
+        Arc::new(WebState::new(
+            config,
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ))
+    }
+
+    fn token_auth_state() -> Arc<WebState> {
+        let config: RunnerGlobalConfig = toml::from_str(
+            r#"
+config_version = "1.0.1"
+workspace_root = "workspaces"
+
+[web]
+enabled = true
+bind = "127.0.0.1:9401"
+auth_mode = "token"
+auth_token = "test-token"
+"#,
+        )
+        .expect("token-auth test config should parse");
+        let config_path = std::path::PathBuf::from("/tmp/test-runner-token.toml");
+        Arc::new(WebState::new(
+            config,
+            config_path,
+            "127.0.0.1:9401".to_owned(),
+        ))
     }
 
     #[tokio::test]
@@ -135,6 +203,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/meta")
+                    .header("host", "127.0.0.1:9400")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -154,7 +223,13 @@ mod tests {
     async fn index_serves_html() {
         let app = build_router(test_state());
         let response = app
-            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .header("host", "127.0.0.1:9400")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -178,6 +253,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/nonexistent")
+                    .header("host", "127.0.0.1:9400")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -187,5 +263,71 @@ mod tests {
         // Unknown API routes fall through to SPA fallback, which serves index.html
         // This is expected behavior for SPA routing
         assert!(response.status() == StatusCode::OK || response.status() == StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn host_validation_rejects_mismatch() {
+        let app = build_router(test_state());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/meta")
+                    .header("host", "malicious.example:9400")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn content_type_layer_rejects_non_json_mutation() {
+        let app = build_router(test_state());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::PATCH)
+                    .uri("/api/v1/config/runner")
+                    .header("host", "127.0.0.1:9400")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
+
+    #[tokio::test]
+    async fn auth_layer_blocks_missing_token_and_accepts_valid_token() {
+        let app = build_router(token_auth_state());
+
+        let unauthorized = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/meta")
+                    .header("host", "127.0.0.1:9401")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let authorized = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/meta")
+                    .header("host", "127.0.0.1:9401")
+                    .header("authorization", "Bearer test-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(authorized.status(), StatusCode::OK);
     }
 }

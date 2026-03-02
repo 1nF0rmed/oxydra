@@ -133,8 +133,8 @@ pub async fn get_agent_config_effective(State(state): State<Arc<WebState>>) -> i
 
 /// `GET /api/v1/config/users` — List all registered users.
 pub async fn list_users(State(state): State<Arc<WebState>>) -> impl IntoResponse {
-    let users: Vec<UserSummary> = state
-        .global_config
+    let global_config = state.latest_global_config_or_cached();
+    let users: Vec<UserSummary> = global_config
         .users
         .iter()
         .map(|(user_id, reg)| UserSummary {
@@ -151,7 +151,8 @@ pub async fn get_user_config(
     State(state): State<Arc<WebState>>,
     Path(user_id): Path<String>,
 ) -> impl IntoResponse {
-    let Some(registration) = state.global_config.users.get(&user_id) else {
+    let global_config = state.latest_global_config_or_cached();
+    let Some(registration) = global_config.users.get(&user_id) else {
         return ApiError::with_status(
             axum::http::StatusCode::NOT_FOUND,
             "not_found",
@@ -160,15 +161,7 @@ pub async fn get_user_config(
         .into_response();
     };
 
-    let config_dir = state.config_dir();
-    let user_config_path = {
-        let p = std::path::PathBuf::from(&registration.config_path);
-        if p.is_absolute() {
-            p
-        } else {
-            config_dir.join(p)
-        }
-    };
+    let user_config_path = state.resolve_user_config_path(&registration.config_path);
 
     if !user_config_path.exists() {
         let config = types::RunnerUserConfig::default();
@@ -212,7 +205,11 @@ mod tests {
     fn test_state_with_dir(dir: &std::path::Path) -> Arc<WebState> {
         let config_path = dir.join("runner.toml");
         let config = types::RunnerGlobalConfig::default();
-        Arc::new(WebState::new(config, config_path))
+        Arc::new(WebState::new(
+            config,
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ))
     }
 
     #[tokio::test]
@@ -225,6 +222,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/config/runner")
+                    .header("host", "127.0.0.1:9400")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -254,13 +252,18 @@ workspace_root = ".oxydra/workspaces"
         .unwrap();
 
         let config = types::RunnerGlobalConfig::default();
-        let state = Arc::new(WebState::new(config, config_path));
+        let state = Arc::new(WebState::new(
+            config,
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
         let app = crate::web::build_router(state);
 
         let resp = app
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/config/runner")
+                    .header("host", "127.0.0.1:9400")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -286,13 +289,18 @@ workspace_root = ".oxydra/workspaces"
                 config_path: "alice.toml".to_owned(),
             },
         );
-        let state = Arc::new(WebState::new(config, config_path));
+        let state = Arc::new(WebState::new(
+            config,
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
         let app = crate::web::build_router(state);
 
         let resp = app
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/config/users")
+                    .header("host", "127.0.0.1:9400")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -319,6 +327,7 @@ workspace_root = ".oxydra/workspaces"
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/config/users/unknown")
+                    .header("host", "127.0.0.1:9400")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -343,6 +352,7 @@ workspace_root = ".oxydra/workspaces"
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/config/agent")
+                    .header("host", "127.0.0.1:9400")
                     .body(Body::empty())
                     .unwrap(),
             )
