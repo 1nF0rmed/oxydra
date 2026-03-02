@@ -1516,3 +1516,41 @@ select.text-input:focus {
   display: flex;
   gap: 8px;
 }
+
+/* --------------------------------------------------------------------------
+   Runner Config — Loopback warning & Users link
+   -------------------------------------------------------------------------- */
+
+.runner-loopback-warning {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid #f0c674;
+  border-radius: 8px;
+  background: #fffbe6;
+  color: #856404;
+  font-size: 0.84rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.45;
+}
+
+.runner-loopback-warning-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.runner-users-link-card {
+  padding: 16px 18px;
+  border: 1px dashed #d0d9e8;
+  border-radius: 8px;
+  background: #f9fbfe;
+  text-align: center;
+}
+
+.runner-users-link-card p {
+  margin: 0 0 12px 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}

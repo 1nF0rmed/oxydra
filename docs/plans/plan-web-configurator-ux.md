@@ -2,7 +2,7 @@
 
 ## Status
 
-- **State:** In Progress (Phase 3 complete)
+- **State:** In Progress (Phase 4 complete)
 - **Issue:** Follow-up to [#7](https://github.com/shantanugoel/oxydra/issues/7)
 - **Scope:** `runner` crate (backend API + frontend static files)
 - **Prerequisite:** Web configurator V1 complete (plan-web-configurator.md)
@@ -576,36 +576,38 @@ Each sender binding is a card with:
 
 ---
 
-### Phase 4: Runner Config Editor Rewrite
+### Phase 4: Runner Config Editor Rewrite ✅
 
 **Goal:** Transform the Runner Config page to structured forms.
 
+**Status:** Complete
+
 **Steps:**
 
-1. **Render General section**:
+1. ✅ **Render General section**:
    - `config_version` as readonly
    - `workspace_root` as text
    - `default_tier` as dropdown
 
-2. **Render Guest Images section**:
+2. ✅ **Render Guest Images section**:
    - Standard text fields with descriptions
    - Firecracker config paths as optional fields
 
-3. **Render Web Configurator section**:
+3. ✅ **Render Web Configurator section**:
    - `enabled` toggle
    - `bind` text field
    - `auth_mode` dropdown (disabled/token)
    - Conditional fields: `auth_token_env` and `auth_token` shown only when auth_mode = token
    - Warning banner when auth_mode = disabled and bind address is not loopback
 
-4. **Users section**: Show a link to the Users page instead of raw editing. Users are managed by the dedicated Users page.
+4. ✅ **Users section**: Show a link to the Users page instead of raw editing. Users are managed by the dedicated Users page.
 
 **Verification gate:**
-- All Runner Config fields have proper labels, help text, and input types
-- `auth_mode` dropdown works with conditional fields
-- `default_tier` dropdown works
-- Save/reload round-trip works
-- All existing tests pass
+- ✅ All Runner Config fields have proper labels, help text, and input types
+- ✅ `auth_mode` dropdown works with conditional fields
+- ✅ `default_tier` dropdown works
+- ✅ Save/reload round-trip works
+- ✅ All existing tests pass
 
 ---
 
