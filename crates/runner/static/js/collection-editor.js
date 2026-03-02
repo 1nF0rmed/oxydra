@@ -125,6 +125,28 @@ window.CollectionEditor = (function () {
         expanded: expanded !== false,
       };
 
+      // Fix secret fields: replace "********" (API mask) with __UNCHANGED__ sentinel
+      // so the backend knows these weren't modified.
+      entrySchemaFields.forEach(function (fieldSchema) {
+        if (fieldSchema.input_type === 'secret') {
+          var current = resolveEntryFieldValue(fieldSchema.path, entry.values);
+          if (current === '********') {
+            setNestedValue(entry.values, fieldSchema.path, '__UNCHANGED__');
+          }
+        }
+      });
+      // Also fix secrets in subsections
+      entrySubsections.forEach(function (sub) {
+        (sub.fields || []).forEach(function (fieldSchema) {
+          if (fieldSchema.input_type === 'secret') {
+            var current = resolveEntryFieldValue(fieldSchema.path, entry.values);
+            if (current === '********') {
+              setNestedValue(entry.values, fieldSchema.path, '__UNCHANGED__');
+            }
+          }
+        });
+      });
+
       // Header
       var header = el('div', 'ce-card-header');
       var headerLeft = el('div', 'ce-card-header-left');

@@ -235,9 +235,14 @@ function app() {
     userList: [],
     runnerEditor: null,
     agentEditor: null,
+    agentStructuredEditor: null,
+    agentConfigRaw: null,
     userEditor: null,
     selectedUserId: '',
     restartNotice: '',
+    schemaCache: null,
+    catalogCache: null,
+    catalogStatusCache: null,
     toast: {
       visible: false,
       message: '',
@@ -303,6 +308,30 @@ function app() {
       await this.loadStatus();
     },
 
+    async loadSchema() {
+      if (this.schemaCache) return this.schemaCache;
+      this.schemaCache = await api('/meta/schema');
+      return this.schemaCache;
+    },
+
+    async loadCatalog() {
+      if (this.catalogCache) return this.catalogCache;
+      this.catalogCache = await api('/catalog');
+      return this.catalogCache;
+    },
+
+    async loadCatalogStatus() {
+      this.catalogStatusCache = await api('/catalog/status');
+      return this.catalogStatusCache;
+    },
+
+    async refreshCatalog() {
+      const result = await api('/catalog/refresh', { method: 'POST', body: {} });
+      // Invalidate catalog cache so it gets reloaded
+      this.catalogCache = null;
+      return result;
+    },
+
     route() {
       const hash = window.location.hash.slice(1) || '/';
       this.currentPage = ROUTES[hash] || 'dashboard';
@@ -360,8 +389,45 @@ function app() {
     },
 
     async loadAgentConfig() {
-      const response = await api('/config/agent');
+      // Load schema, catalog, and config in parallel
+      const [schemaData, catalogData, catalogStatus, response] = await Promise.all([
+        this.loadSchema(),
+        this.loadCatalog(),
+        this.loadCatalogStatus(),
+        api('/config/agent'),
+      ]);
+
+      // Store raw response for save flow
+      this.agentConfigRaw = response;
+
+      // Keep the old editor for backward compat of save flow
       this.agentEditor = createEditor(response, '/config/agent');
+
+      // Render the structured editor
+      const container = document.getElementById('agent-structured-editor');
+      if (container && schemaData && window.AgentConfigEditor) {
+        const self = this;
+        this.agentStructuredEditor = window.AgentConfigEditor.render(container, {
+          schema: schemaData.agent,
+          config: response.config,
+          dynamicSources: schemaData.dynamic_sources,
+          catalog: catalogData.providers || [],
+          catalogStatus: catalogStatus,
+          fileExists: response.file_exists,
+          filePath: response.file_path,
+          showToast: (msg, kind) => self.showToast(msg, kind),
+          onRefreshCatalog: async () => {
+            try {
+              const result = await self.refreshCatalog();
+              self.showToast('Catalog refreshed successfully.', 'success');
+              return result;
+            } catch (error) {
+              self.showToast(error.message, 'error');
+              throw error;
+            }
+          },
+        });
+      }
     },
 
     async loadUsersPage() {
@@ -584,6 +650,13 @@ function app() {
       return Boolean(editor && editor.fields.some((field) => fieldHasChanges(field)));
     },
 
+    agentHasChanges() {
+      if (this.agentStructuredEditor) {
+        return this.agentStructuredEditor.hasChanges();
+      }
+      return this.editorHasChanges(this.agentEditor);
+    },
+
     buildEditorPatch(editor) {
       const patch = {};
       let hasUserChanges = false;
@@ -687,9 +760,72 @@ function app() {
     },
 
     async saveAgentConfig() {
+      if (this.saving) return;
+
+      // Use structured editor if available
+      if (this.agentStructuredEditor) {
+        await this.saveStructuredAgentConfig();
+        return;
+      }
+
+      // Fallback to legacy editor
       await this.saveEditor(this.agentEditor, 'Agent configuration', async () => {
         await this.loadAgentConfig();
       });
+    },
+
+    async saveStructuredAgentConfig() {
+      if (!this.agentStructuredEditor || this.saving) return;
+
+      const patchResult = this.agentStructuredEditor.getPatch();
+      if (!patchResult.hasChanges) {
+        this.showToast('No changes to save for Agent configuration.', 'info');
+        return;
+      }
+
+      this.saving = true;
+      try {
+        const endpoint = '/config/agent';
+        const patch = patchResult.patch;
+
+        // Validate first
+        const validation = await api(`${endpoint}/validate`, {
+          method: 'POST',
+          body: patch,
+        });
+        const changedFields = validation.changed_fields || [];
+
+        if (changedFields.length === 0) {
+          this.showToast('No effective changes for Agent configuration.', 'info');
+          return;
+        }
+
+        const preview = changedFields.slice(0, 12).join('\n');
+        const accepted = window.confirm(
+          `Save Agent configuration?\n\nChanged fields:\n${preview}${changedFields.length > 12 ? '\n...' : ''}`
+        );
+        if (!accepted) return;
+
+        const result = await api(endpoint, {
+          method: 'PATCH',
+          body: patch,
+        });
+
+        if (result.restart_required) {
+          this.restartNotice = 'Configuration was saved. Restart is required for running daemon(s).';
+        }
+
+        // Reload the page
+        await this.loadAgentConfig();
+        await this.loadStatus();
+        await this.refreshOnboardingStatus();
+
+        this.showToast('Agent configuration saved successfully.', 'success');
+      } catch (error) {
+        this.showToast(error.message, 'error');
+      } finally {
+        this.saving = false;
+      }
     },
 
     async saveUserConfig() {

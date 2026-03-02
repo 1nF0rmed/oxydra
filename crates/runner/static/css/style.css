@@ -1473,3 +1473,46 @@ select.text-input:focus {
     gap: 6px;
   }
 }
+
+/* ── Structured Editor ──────────────────────────────────────────── */
+
+.structured-editor {
+  margin-bottom: 16px;
+}
+
+/* ── Catalog Status Card ────────────────────────────────────────── */
+
+.catalog-status-card {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #e3ecff;
+  border-radius: 8px;
+  background: #f7faff;
+}
+
+.catalog-status-header {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.catalog-status-info {
+  margin-bottom: 8px;
+}
+
+.catalog-status-line {
+  margin: 3px 0;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+.catalog-status-line strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.catalog-status-actions {
+  display: flex;
+  gap: 8px;
+}

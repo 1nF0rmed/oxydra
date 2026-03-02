@@ -2,7 +2,7 @@
 
 ## Status
 
-- **State:** In Progress (Phase 2 complete)
+- **State:** In Progress (Phase 3 complete)
 - **Issue:** Follow-up to [#7](https://github.com/shantanugoel/oxydra/issues/7)
 - **Scope:** `runner` crate (backend API + frontend static files)
 - **Prerequisite:** Web configurator V1 complete (plan-web-configurator.md)
@@ -431,7 +431,7 @@ Each sender binding is a card with:
 
 ---
 
-### Phase 2: Frontend Infrastructure — Form System & Responsive Nav
+### Phase 2: Frontend Infrastructure — Form System & Responsive Nav ✅
 
 **Goal:** Build the reusable form rendering infrastructure and fix mobile navigation.
 
@@ -439,7 +439,7 @@ Each sender binding is a card with:
 
 **Steps:**
 
-1. **Create `static/js/form-renderer.js`** — Reusable field rendering logic:
+1. ✅ **Create `static/js/form-renderer.js`** — Reusable field rendering logic:
    - `renderField(field, schema, dynamicSources, onChange)` — Returns the appropriate input widget based on `schema.input_type`.
    - Implements all input types from the taxonomy: `text`, `number`, `boolean`, `select`, `select_dynamic`, `model_picker`, `multiline`, `multi_select`, `tag_list`, `key_value_map`, `readonly`.
    - Add nullable/unset handling for optional fields (optional strings/numbers + tri-state optional booleans).
@@ -449,7 +449,7 @@ Each sender binding is a card with:
    - The `key_value_map` widget: repeating rows of key + value inputs with + and − buttons.
    - The `multi_select` widget: scrollable checkbox list with "select all / none" toggle.
 
-2. **Create `static/js/collection-editor.js`** — Dynamic collection management:
+2. ✅ **Create `static/js/collection-editor.js`** — Dynamic collection management:
    - `CollectionEditor` component for map-type collections (providers, agents, credential_refs).
    - Each entry rendered as a collapsible card with:
      - Header showing the entry key/name
@@ -460,13 +460,13 @@ Each sender binding is a card with:
    - For array collections, edits/deletions are emitted as full-array replacement payloads
    - Rename support (delete old key + create new)
 
-3. **Create `static/js/section-renderer.js`** — Section rendering:
+3. ✅ **Create `static/js/section-renderer.js`** — Section rendering:
    - Renders a schema section as a collapsible card
    - Section header with title + description + expand/collapse toggle
    - Contains rendered fields from `form-renderer.js`
    - Tracks changes per section
 
-4. **Update `static/css/style.css`** — Mobile hamburger menu:
+4. ✅ **Update `static/css/style.css`** — Mobile hamburger menu:
    - Add hamburger button (visible only on mobile)
    - Sidebar becomes a slide-out overlay on mobile with backdrop
    - Close on navigation or backdrop click
@@ -474,51 +474,53 @@ Each sender binding is a card with:
    - Update all existing responsive breakpoints
    - Add styles for new input types (tag-list chips, model picker, multi-select checkboxes)
 
-5. **Update `static/index.html`** — Add hamburger button:
+5. ✅ **Update `static/index.html`** — Add hamburger button:
    - Add hamburger toggle button to the mobile nav area
    - Wire Alpine.js state for sidebar open/close
    - Load new JS modules
 
 **Verification gate:**
-- Hamburger menu works on mobile viewports (< 920px)
-- Sidebar slides out and closes properly
-- All input type widgets render correctly (manually tested with mock data)
-- Existing pages still function (backward compatible)
-- No console errors
+- ✅ Hamburger menu works on mobile viewports (< 920px)
+- ✅ Sidebar slides out and closes properly
+- ✅ All input type widgets render correctly (manually tested with mock data)
+- ✅ Existing pages still function (backward compatible)
+- ✅ No console errors
 
 ---
 
-### Phase 3: Agent Config Editor Rewrite
+### Phase 3: Agent Config Editor Rewrite ✅
 
 **Goal:** Transform the Agent Config page from generic fields to a structured, section-based form.
 
+**Status:** Complete
+
 **Steps:**
 
-1. **Fetch schema and catalog on page load**:
+1. ✅ **Fetch schema and catalog on page load**:
    - When navigating to `#/config/agent`, fetch:
      - `GET /api/v1/meta/schema` (cached after first load)
      - `GET /api/v1/config/agent` (current config values)
      - `GET /api/v1/catalog` (cached after first load, used by model_picker)
    - Merge schema + values to produce the editor state
 
-2. **Render the Selection section**:
+2. ✅ **Render the Selection section**:
    - Provider dropdown populated from `dynamic_sources.registered_providers`
    - Model picker populated from catalog, filtered to the selected provider's `catalog_provider`
    - When provider changes, model picker updates available models
    - "Custom" option in both dropdowns for free-text entry
 
-3. **Render Runtime / Context Budget / Summarization sections**:
+3. ✅ **Render Runtime / Context Budget / Summarization sections**:
    - All number fields with proper constraints
    - Help text below each field
 
-4. **Render Memory section**:
+4. ✅ **Render Memory section**:
    - `enabled` toggle
    - Conditional fields: `remote_url` and `auth_token` shown when memory is enabled
    - `embedding_backend` dropdown
    - `model2vec_model` dropdown (shown only when backend = model2vec)
    - Retrieval sub-section with weight fields
 
-5. **Render Providers section** (collection editor):
+5. ✅ **Render Providers section** (collection editor):
    - Each provider shown as an expandable card
    - Card header: provider name + provider type badge
    - Card body: structured form with all fields
@@ -526,29 +528,29 @@ Each sender binding is a card with:
    - "Add Provider" button
    - "Remove Provider" button with confirmation
 
-6. **Render Reliability section**:
+6. ✅ **Render Reliability section**:
    - Simple form fields with constraints
 
-7. **Render Catalog section**:
+7. ✅ **Render Catalog section**:
    - `skip_catalog_validation` toggle
    - `pinned_url` text field
    - **Catalog status card**: shows current catalog source, provider/model counts
    - **"Refresh Catalog"** button that calls `POST /api/v1/catalog/refresh`
 
-8. **Render Tools sections**:
+8. ✅ **Render Tools sections**:
    - Each tool config (web_search, shell, attachment_save) as an optional collapsible section
    - "Enable" toggle that creates/removes the section
    - When enabled, shows the structured fields
 
-9. **Render Scheduler section**:
+9. ✅ **Render Scheduler section**:
    - `enabled` toggle
    - All fields shown when enabled
    - Timezone field with suggestions
 
-10. **Render Gateway section**:
+10. ✅ **Render Gateway section**:
     - Simple form fields
 
-11. **Render Agents section** (collection editor):
+11. ✅ **Render Agents section** (collection editor):
     - Each agent as an expandable card
     - System prompt as a textarea
     - Optional selection override with model picker
@@ -557,20 +559,20 @@ Each sender binding is a card with:
     - "Add Agent" button
     - "Remove Agent" button with confirmation
 
-12. **Rework save flow**:
+12. ✅ **Rework save flow**:
     - Build the JSON merge patch from changed fields across all sections, including explicit `null` for user-cleared nullable values
     - Validate → preview changes → PATCH
     - Handle collection additions/removals correctly in the patch (map deletion via `null`, array edits via full-array replacement)
 
 **Verification gate:**
-- All Agent Config fields are rendered with proper labels, help text, and input types
-- Provider addition/removal works and saves correctly
-- Agent definition addition/removal works and saves correctly
-- Model picker shows catalog models and allows custom entry
-- Tool multi-select shows all available tools
-- Saving preserves TOML comments
-- Round-trip: load → edit → save → reload → verify changes
-- All existing tests pass
+- ✅ All Agent Config fields are rendered with proper labels, help text, and input types
+- ✅ Provider addition/removal works and saves correctly
+- ✅ Agent definition addition/removal works and saves correctly
+- ✅ Model picker shows catalog models and allows custom entry
+- ✅ Tool multi-select shows all available tools
+- ✅ Saving preserves TOML comments
+- ✅ Round-trip: load → edit → save → reload → verify changes
+- ✅ All existing tests pass
 
 ---
 

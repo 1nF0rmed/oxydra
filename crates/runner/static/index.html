@@ -8,6 +8,7 @@
   <script defer src="/js/form-renderer.js"></script>
   <script defer src="/js/section-renderer.js"></script>
   <script defer src="/js/collection-editor.js"></script>
+  <script defer src="/js/config-agent.js"></script>
   <script defer src="/js/onboarding.js"></script>
   <script defer src="/js/control.js"></script>
   <script defer src="/js/logs.js"></script>
@@ -139,50 +140,11 @@
             <span class="file-path" x-text="agentEditor && agentEditor.filePath"></span>
           </div>
 
-          <div class="editor-panel">
-            <template x-for="field in ((agentEditor && agentEditor.fields) || [])" :key="field.path">
-              <div class="field-row">
-                <label class="field-label" x-text="field.path" :for="'agent-' + field.path"></label>
-
-                <input x-show="field.type === 'string'" type="text" class="text-input"
-                       :id="'agent-' + field.path"
-                       :value="field.value"
-                       @input="updateTextField(agentEditor, field, $event.target.value)"
-                       @keydown.enter="saveAgentConfig()">
-
-                <input x-show="field.type === 'number'" type="number" class="text-input"
-                       :id="'agent-' + field.path"
-                       :value="field.value"
-                       @input="updateNumberField(agentEditor, field, $event.target.value)"
-                       @keydown.enter="saveAgentConfig()">
-
-                <label x-show="field.type === 'boolean'" class="switch-row">
-                  <input type="checkbox" :checked="field.value"
-                         @change="updateBooleanField(agentEditor, field, $event.target.checked)">
-                  <span x-text="field.value ? 'true' : 'false'"></span>
-                </label>
-
-                <div x-show="field.type === 'secret'" class="secret-row">
-                  <input type="password" class="text-input" placeholder="********"
-                         :id="'agent-' + field.path"
-                         :value="field.value"
-                         @input="updateTextField(agentEditor, field, $event.target.value)"
-                         @keydown.enter="saveAgentConfig()">
-                  <button class="btn btn-muted" @click="clearSecretField(agentEditor, field)">Clear</button>
-                </div>
-
-                <textarea x-show="field.type === 'json'" class="json-input"
-                          :id="'agent-' + field.path"
-                          @input="updateJsonField(agentEditor, field, $event.target.value)"
-                          x-text="field.value"></textarea>
-
-                <p x-show="field.parseError" class="error-text" x-text="field.parseError"></p>
-              </div>
-            </template>
-          </div>
+          <!-- Structured editor container -->
+          <div id="agent-structured-editor" class="structured-editor"></div>
 
           <div class="actions-row">
-            <button class="btn btn-primary" :disabled="saving || !editorHasChanges(agentEditor)" @click="saveAgentConfig()">
+            <button class="btn btn-primary" :disabled="saving" @click="saveAgentConfig()">
               <span x-show="saving" class="spinner"></span>
               Validate &amp; Save
             </button>
