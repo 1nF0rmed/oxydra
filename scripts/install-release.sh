@@ -675,7 +675,22 @@ create_backup() {
 
   if [[ -d "$CONFIG_ROOT" ]]; then
     mkdir -p "${BACKUP_PATH}/config"
-    cp -R "$CONFIG_ROOT" "${BACKUP_PATH}/config/"
+    # Exclude the workspace directory — it may contain root-owned files created
+    # by Docker containers (e.g. Chromium tmp sockets) that cp cannot access.
+    local _ws_subdir="workspaces"
+    if [[ -f "$RUNNER_CONFIG" ]]; then
+      local _ws_from_cfg
+      _ws_from_cfg="$(sed -nE 's/^[[:space:]]*workspace_root[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$RUNNER_CONFIG" | head -n 1 || true)"
+      if [[ -n "$_ws_from_cfg" && "$_ws_from_cfg" != /* ]]; then
+        _ws_subdir="$_ws_from_cfg"
+      fi
+    fi
+    local _backup_config_dir="${BACKUP_PATH}/config/.oxydra"
+    mkdir -p "$_backup_config_dir"
+    local _item
+    while IFS= read -r -d '' _item; do
+      cp -R "$_item" "$_backup_config_dir/"
+    done < <(find "$CONFIG_ROOT" -mindepth 1 -maxdepth 1 ! -name "$_ws_subdir" -print0)
   fi
 
   rotate_backups "$BACKUP_ROOT"
