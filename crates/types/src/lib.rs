@@ -56,7 +56,7 @@ pub use model::{
 pub use proactive::ProactiveSender;
 pub use provider::{Provider, ProviderStream};
 pub use runner::{
-    BootstrapEnvelopeError, ChannelsConfig, DEFAULT_RUNNER_CONFIG_VERSION, ExecCommand,
+    BootstrapEnvelopeError, BrowserToolConfig, ChannelsConfig, DEFAULT_RUNNER_CONFIG_VERSION, ExecCommand,
     ExecCommandAck, KillSession, KillSessionAck, LOG_TAIL_DEFAULT, LOG_TAIL_MAX, LogFormat,
     LogRole, LogSource, LogStream, RunnerBehaviorOverrides, RunnerBootstrapEnvelope,
     RunnerConfigError, RunnerControl, RunnerControlError, RunnerControlErrorCode,
@@ -68,6 +68,7 @@ pub use runner::{
     ShellDaemonRequest, ShellDaemonResponse, ShellOutputStream, SidecarEndpoint, SidecarTransport,
     SpawnSession, SpawnSessionAck, StartupDegradedReason, StartupDegradedReasonCode,
     StartupStatusReport, StreamOutput, StreamOutputChunk, TelegramChannelConfig, WebAuthMode,
+    DEFAULT_PINCHTAB_PORT, PINCHTAB_PORT_RANGE,
 };
 pub use scheduler::{
     NotificationPolicy, ScheduleCadence, ScheduleDefinition, SchedulePatch, ScheduleRunRecord,

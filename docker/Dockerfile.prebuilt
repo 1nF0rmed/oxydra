@@ -60,4 +60,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY ${BINARY} /usr/local/bin/shell-daemon
 RUN chmod +x /usr/local/bin/shell-daemon
-ENTRYPOINT ["/usr/local/bin/shell-daemon"]
+COPY docker/shell-vm-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

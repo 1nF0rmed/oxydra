@@ -1725,6 +1725,7 @@ remote_url = "libsql://example-org.turso.io"
             runtime_policy: None,
             startup_status: None,
             channels: None,
+            browser_config: None,
         }
         .to_length_prefixed_json()
         .expect("process-tier bootstrap frame should encode");
@@ -1784,6 +1785,7 @@ remote_url = "libsql://example-org.turso.io"
             runtime_policy: None,
             startup_status: None,
             channels: None,
+            browser_config: None,
         }
         .to_length_prefixed_json()
         .expect("sidecar bootstrap frame should encode");

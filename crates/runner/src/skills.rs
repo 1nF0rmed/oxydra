@@ -834,4 +834,143 @@ Body.
         let skill = parse_skill_file(&path).expect("should parse");
         assert_eq!(skill.metadata.env_vars, vec!["FOO"]);
     }
+
+    // -----------------------------------------------------------------------
+    // Browser skill activation scenarios
+    // -----------------------------------------------------------------------
+
+    /// A browser skill requiring `shell_exec` + `PINCHTAB_URL` activates when
+    /// shell is ready and the env var is set.
+    #[test]
+    fn browser_skill_activates_when_shell_ready_and_pinchtab_url_set() {
+        let tmp = temp_dir("browser-activate");
+        let content = r#"---
+name: browser-automation
+description: Browser skill
+activation: auto
+requires:
+  - shell_exec
+env:
+  - PINCHTAB_URL
+priority: 50
+---
+
+Use curl {{PINCHTAB_URL}}/api.
+"#;
+        write_skill(tmp.path(), "browser.md", content);
+        let ws = temp_dir("ws-browser-activate");
+
+        let skills = discover_skills(tmp.path(), None, ws.path());
+        let mut env = HashMap::new();
+        env.insert(
+            "PINCHTAB_URL".to_owned(),
+            "http://127.0.0.1:9867".to_owned(),
+        );
+
+        let active = evaluate_activation(&skills, &ready_availability(), &env);
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].metadata.name, "browser-automation");
+    }
+
+    /// A browser skill does NOT activate when `PINCHTAB_URL` is missing
+    /// (browser health check failed → env var not set).
+    #[test]
+    fn browser_skill_inactive_when_pinchtab_url_missing() {
+        let tmp = temp_dir("browser-no-url");
+        let content = r#"---
+name: browser-automation
+description: Browser skill
+activation: auto
+requires:
+  - shell_exec
+env:
+  - PINCHTAB_URL
+---
+
+Browser content.
+"#;
+        write_skill(tmp.path(), "browser.md", content);
+        let ws = temp_dir("ws-browser-no-url");
+
+        let skills = discover_skills(tmp.path(), None, ws.path());
+        // Shell is ready but PINCHTAB_URL not set.
+        let active = evaluate_activation(&skills, &ready_availability(), &HashMap::new());
+        assert!(
+            active.is_empty(),
+            "browser skill should not activate without PINCHTAB_URL"
+        );
+    }
+
+    /// A browser skill does NOT activate when shell is unavailable, even if
+    /// PINCHTAB_URL is set. This simulates a Pinchtab health failure scenario
+    /// where the shell sidecar itself is down.
+    #[test]
+    fn browser_skill_inactive_when_shell_unavailable() {
+        let tmp = temp_dir("browser-no-shell");
+        let content = r#"---
+name: browser-automation
+description: Browser skill
+activation: auto
+requires:
+  - shell_exec
+env:
+  - PINCHTAB_URL
+---
+
+Browser content.
+"#;
+        write_skill(tmp.path(), "browser.md", content);
+        let ws = temp_dir("ws-browser-no-shell");
+
+        let skills = discover_skills(tmp.path(), None, ws.path());
+        let mut env = HashMap::new();
+        env.insert(
+            "PINCHTAB_URL".to_owned(),
+            "http://127.0.0.1:9867".to_owned(),
+        );
+
+        let active = evaluate_activation(&skills, &unavailable_availability(), &env);
+        assert!(
+            active.is_empty(),
+            "browser skill should not activate when shell is unavailable"
+        );
+    }
+
+    /// Verifies that rendered browser skill content has PINCHTAB_URL
+    /// substituted correctly.
+    #[test]
+    fn browser_skill_renders_pinchtab_url() {
+        let tmp = temp_dir("browser-render");
+        let content = r#"---
+name: browser-automation
+description: Browser skill
+activation: auto
+requires:
+  - shell_exec
+env:
+  - PINCHTAB_URL
+---
+
+Navigate: `curl {{PINCHTAB_URL}}/navigate`
+"#;
+        write_skill(tmp.path(), "browser.md", content);
+        let ws = temp_dir("ws-browser-render");
+
+        let skills = discover_skills(tmp.path(), None, ws.path());
+        let mut env = HashMap::new();
+        env.insert(
+            "PINCHTAB_URL".to_owned(),
+            "http://127.0.0.1:9867".to_owned(),
+        );
+
+        let rendered = render_skill(&skills[0], &env);
+        assert!(
+            rendered.content.contains("http://127.0.0.1:9867/navigate"),
+            "PINCHTAB_URL should be substituted"
+        );
+        assert!(
+            !rendered.content.contains("{{PINCHTAB_URL}}"),
+            "placeholder should be replaced"
+        );
+    }
 }

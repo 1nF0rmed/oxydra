@@ -33,4 +33,6 @@ FROM debian:trixie-slim AS shell-vm
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates chromium && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/target/*/release/shell-daemon /usr/local/bin/shell-daemon
-ENTRYPOINT ["/usr/local/bin/shell-daemon"]
+COPY docker/shell-vm-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

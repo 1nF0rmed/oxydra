@@ -994,6 +994,7 @@ fn bootstrap_file_written_with_correct_content_for_non_process_tier() {
         runtime_policy: None,
         startup_status: None,
         channels: None,
+        browser_config: None,
     };
     let path =
         write_bootstrap_file(&workspace, &bootstrap).expect("bootstrap file should be written");
@@ -1118,6 +1119,7 @@ fn firecracker_config_injects_bootstrap_into_boot_args() {
         runtime_policy: None,
         startup_status: None,
         channels: None,
+        browser_config: None,
     };
     let bootstrap_json = serde_json::to_vec_pretty(&bootstrap).unwrap();
     fs::write(&bootstrap_path, &bootstrap_json).expect("bootstrap file should be writable");
@@ -1239,6 +1241,7 @@ fn firecracker_config_rejects_oversized_bootstrap() {
         runtime_policy: None,
         startup_status: None,
         channels: None,
+        browser_config: None,
     };
     let bootstrap_json = serde_json::to_vec_pretty(&bootstrap).unwrap();
     fs::write(&bootstrap_path, &bootstrap_json).expect("bootstrap file should be writable");
@@ -2160,4 +2163,313 @@ fn read_log_file_tail_with_since_filter() {
     assert!(lines[1].contains("new line two"));
 
     let _ = fs::remove_dir_all(dir);
+}
+
+// ── Browser (Pinchtab) infrastructure tests ─────────────────────────────────
+
+#[test]
+fn find_available_port_returns_some_port_in_range() {
+    // This test may fail if all ports in the range are in use, which is
+    // unlikely in a test environment.
+    let port = super::find_available_port();
+    assert!(port.is_some(), "should find at least one available port");
+    let port = port.unwrap();
+    assert!(
+        (types::DEFAULT_PINCHTAB_PORT..types::DEFAULT_PINCHTAB_PORT + types::PINCHTAB_PORT_RANGE)
+            .contains(&port),
+        "port {port} should be within the expected range"
+    );
+}
+
+#[test]
+fn generate_bridge_token_produces_hex_string() {
+    let token = super::generate_bridge_token();
+    assert!(
+        !token.is_empty(),
+        "token should not be empty"
+    );
+    assert!(
+        token.len() >= 32,
+        "token should be at least 32 characters, got {}",
+        token.len()
+    );
+    assert!(
+        token.chars().all(|c| c.is_ascii_hexdigit()),
+        "token should contain only hex characters, got: {token}"
+    );
+}
+
+#[test]
+fn generate_bridge_token_produces_unique_values() {
+    let t1 = super::generate_bridge_token();
+    // Sleep a tiny bit to ensure different timestamps.
+    std::thread::sleep(std::time::Duration::from_millis(1));
+    let t2 = super::generate_bridge_token();
+    assert_ne!(t1, t2, "two consecutive tokens should differ");
+}
+
+#[test]
+fn build_browser_env_returns_expected_vars() {
+    let (env_vars, pinchtab_url) = super::build_browser_env(9867, "test-token-abc");
+    assert_eq!(pinchtab_url, "http://127.0.0.1:9867");
+    assert!(env_vars.contains(&"BROWSER_ENABLED=true".to_owned()));
+    assert!(env_vars.contains(&"BRIDGE_PORT=9867".to_owned()));
+    assert!(env_vars.contains(&"BRIDGE_BIND=127.0.0.1".to_owned()));
+    assert!(env_vars.contains(&"BRIDGE_TOKEN=test-token-abc".to_owned()));
+    assert!(env_vars.contains(&"BRIDGE_HEADLESS=true".to_owned()));
+    assert!(env_vars.contains(&"CHROME_BINARY=/usr/bin/chromium".to_owned()));
+    assert!(env_vars.contains(&"CHROME_FLAGS=--no-sandbox".to_owned()));
+}
+
+#[test]
+fn apply_browser_shell_overlay_adds_required_commands() {
+    let mut config = types::ShellConfig::default();
+    super::apply_browser_shell_overlay(&mut config);
+
+    let allow = config.allow.expect("allow should be set");
+    assert!(allow.contains(&"curl".to_owned()));
+    assert!(allow.contains(&"jq".to_owned()));
+    assert!(allow.contains(&"sleep".to_owned()));
+    assert_eq!(config.allow_operators, Some(true));
+}
+
+#[test]
+fn apply_browser_shell_overlay_does_not_duplicate_existing_commands() {
+    let mut config = types::ShellConfig {
+        allow: Some(vec!["curl".to_owned(), "git".to_owned()]),
+        allow_operators: Some(true),
+        ..Default::default()
+    };
+    super::apply_browser_shell_overlay(&mut config);
+
+    let allow = config.allow.expect("allow should be set");
+    let curl_count = allow.iter().filter(|c| c.as_str() == "curl").count();
+    assert_eq!(curl_count, 1, "curl should not be duplicated");
+    assert!(allow.contains(&"jq".to_owned()));
+    assert!(allow.contains(&"sleep".to_owned()));
+    assert!(allow.contains(&"git".to_owned()), "existing entries preserved");
+}
+
+#[test]
+fn apply_browser_shell_overlay_preserves_existing_deny_and_replace_defaults() {
+    let mut config = types::ShellConfig {
+        allow: Some(vec!["npm".to_owned()]),
+        deny: Some(vec!["rm".to_owned()]),
+        replace_defaults: Some(true),
+        allow_operators: Some(false),
+        env_keys: Some(vec!["MY_KEY".to_owned()]),
+    };
+    super::apply_browser_shell_overlay(&mut config);
+
+    assert_eq!(config.deny.as_ref().unwrap(), &["rm"]);
+    assert_eq!(config.replace_defaults, Some(true));
+    assert_eq!(config.allow_operators, Some(true)); // overridden
+    assert_eq!(config.env_keys.as_ref().unwrap(), &["MY_KEY"]);
+    let allow = config.allow.unwrap();
+    assert!(allow.contains(&"npm".to_owned()));
+    assert!(allow.contains(&"curl".to_owned()));
+}
+
+#[test]
+fn copy_skill_reference_files_copies_to_target() {
+    let source_root = temp_dir("skill-ref-src");
+    let source_refs = source_root.join(super::SKILL_REFS_SOURCE_DIR);
+    fs::create_dir_all(&source_refs).unwrap();
+    fs::write(source_refs.join("pinchtab-api.md"), "# API Reference\n").unwrap();
+    fs::write(source_refs.join("extra.md"), "# Extra\n").unwrap();
+
+    let shared_dir = temp_dir("skill-ref-shared");
+
+    super::copy_skill_reference_files(&source_root, &shared_dir)
+        .expect("copy should succeed");
+
+    let target = shared_dir.join(super::SKILL_REFS_DIR);
+    assert!(target.join("pinchtab-api.md").is_file());
+    assert!(target.join("extra.md").is_file());
+
+    let content = fs::read_to_string(target.join("pinchtab-api.md")).unwrap();
+    assert_eq!(content, "# API Reference\n");
+
+    let _ = fs::remove_dir_all(source_root);
+    let _ = fs::remove_dir_all(shared_dir);
+}
+
+#[test]
+fn copy_skill_reference_files_is_noop_when_source_missing() {
+    let source_root = temp_dir("skill-ref-nosrc");
+    let shared_dir = temp_dir("skill-ref-noshared");
+
+    // No source directory exists — should succeed silently.
+    super::copy_skill_reference_files(&source_root, &shared_dir)
+        .expect("missing source should not be an error");
+
+    let _ = fs::remove_dir_all(source_root);
+    let _ = fs::remove_dir_all(shared_dir);
+}
+
+#[test]
+fn browser_config_in_bootstrap_envelope_round_trips() {
+    use types::BrowserToolConfig;
+
+    let envelope = RunnerBootstrapEnvelope {
+        user_id: "alice".to_owned(),
+        sandbox_tier: SandboxTier::Container,
+        workspace_root: "/workspace/alice".to_owned(),
+        sidecar_endpoint: Some(SidecarEndpoint {
+            transport: SidecarTransport::Unix,
+            address: "/tmp/shell-daemon.sock".to_owned(),
+        }),
+        runtime_policy: None,
+        startup_status: Some(StartupStatusReport {
+            sandbox_tier: SandboxTier::Container,
+            sidecar_available: true,
+            shell_available: true,
+            browser_available: true,
+            degraded_reasons: Vec::new(),
+        }),
+        channels: None,
+        browser_config: Some(BrowserToolConfig {
+            pinchtab_base_url: "http://127.0.0.1:9867".to_owned(),
+            bridge_token: Some("test-token-123".to_owned()),
+        }),
+    };
+
+    let encoded = envelope
+        .to_length_prefixed_json()
+        .expect("envelope with browser_config should encode");
+    let decoded = RunnerBootstrapEnvelope::from_length_prefixed_json(&encoded)
+        .expect("envelope with browser_config should decode");
+    assert_eq!(decoded, envelope);
+    let bc = decoded.browser_config.expect("browser_config should be present");
+    assert_eq!(bc.pinchtab_base_url, "http://127.0.0.1:9867");
+    assert_eq!(bc.bridge_token.as_deref(), Some("test-token-123"));
+}
+
+#[test]
+fn startup_with_browser_enabled_populates_browser_env_in_shell_vm() {
+    let root = temp_dir("browser-env");
+    let global_path = write_runner_config_fixture(&root, "container");
+    write_user_config(
+        &root.join("users/alice.toml"),
+        r#"
+[behavior]
+browser_enabled = true
+"#,
+    );
+
+    let backend = Arc::new(MockSandboxBackend::default());
+    let runner = Runner::from_global_config_path_with_backend(&global_path, backend.clone())
+        .expect("runner should initialize");
+    let startup = runner
+        .start_user_for_host(RunnerStartRequest::new("alice"), "linux")
+        .expect("startup should succeed");
+
+    // Verify browser_config is set in the bootstrap envelope.
+    assert!(
+        startup.bootstrap.browser_config.is_some(),
+        "browser_config should be populated when browser is enabled"
+    );
+    let bc = startup.bootstrap.browser_config.as_ref().unwrap();
+    assert!(
+        bc.pinchtab_base_url.starts_with("http://127.0.0.1:"),
+        "pinchtab_base_url should be a loopback URL, got: {}",
+        bc.pinchtab_base_url
+    );
+    assert!(
+        bc.bridge_token.is_some(),
+        "bridge_token should be generated"
+    );
+
+    // Verify shell_env contains browser-specific variables.
+    let launches = backend.recorded_launches();
+    assert_eq!(launches.len(), 1);
+    let shell_env = &launches[0].shell_env;
+    assert!(
+        shell_env.iter().any(|e| e == "BROWSER_ENABLED=true"),
+        "shell_env should contain BROWSER_ENABLED=true, got: {shell_env:?}"
+    );
+    assert!(
+        shell_env.iter().any(|e| e.starts_with("BRIDGE_TOKEN=")),
+        "shell_env should contain BRIDGE_TOKEN, got: {shell_env:?}"
+    );
+    assert!(
+        shell_env.iter().any(|e| e.starts_with("BRIDGE_PORT=")),
+        "shell_env should contain BRIDGE_PORT, got: {shell_env:?}"
+    );
+
+    // Verify oxydra-vm extra_env contains PINCHTAB_URL.
+    let extra_env = &launches[0].extra_env;
+    assert!(
+        extra_env.iter().any(|e| e.starts_with("PINCHTAB_URL=")),
+        "extra_env should contain PINCHTAB_URL, got: {extra_env:?}"
+    );
+    assert!(
+        extra_env.iter().any(|e| e.starts_with("BRIDGE_TOKEN=")),
+        "extra_env should contain BRIDGE_TOKEN for skill template, got: {extra_env:?}"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn startup_with_browser_disabled_has_no_browser_config() {
+    let root = temp_dir("browser-disabled");
+    let global_path = write_runner_config_fixture(&root, "container");
+    write_user_config(
+        &root.join("users/alice.toml"),
+        r#"
+[behavior]
+browser_enabled = false
+"#,
+    );
+
+    let backend = Arc::new(MockSandboxBackend::default());
+    let runner = Runner::from_global_config_path_with_backend(&global_path, backend.clone())
+        .expect("runner should initialize");
+    let startup = runner
+        .start_user_for_host(RunnerStartRequest::new("alice"), "linux")
+        .expect("startup should succeed");
+
+    assert!(
+        startup.bootstrap.browser_config.is_none(),
+        "browser_config should not be set when browser is disabled"
+    );
+
+    let launches = backend.recorded_launches();
+    let shell_env = &launches[0].shell_env;
+    assert!(
+        !shell_env.iter().any(|e| e.starts_with("BROWSER_ENABLED=")),
+        "shell_env should not contain BROWSER_ENABLED when browser disabled, got: {shell_env:?}"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn startup_process_tier_never_provisions_browser() {
+    let root = temp_dir("browser-process");
+    let global_path = write_runner_config_fixture(&root, "micro_vm");
+    write_user_config(&root.join("users/alice.toml"), "");
+
+    let backend = Arc::new(MockSandboxBackend::default());
+    let runner = Runner::from_global_config_path_with_backend(&global_path, backend.clone())
+        .expect("runner should initialize");
+    let startup = runner
+        .start_user_for_host(
+            RunnerStartRequest {
+                user_id: "alice".to_owned(),
+                insecure: true,
+                extra_env: Vec::new(),
+            },
+            "linux",
+        )
+        .expect("startup should succeed");
+
+    assert!(
+        startup.bootstrap.browser_config.is_none(),
+        "browser_config should not be set in process tier"
+    );
+    assert!(!startup.browser_available);
+
+    let _ = fs::remove_dir_all(root);
 }
