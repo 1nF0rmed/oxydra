@@ -92,9 +92,33 @@ impl WebState {
 
     /// Returns true when the request Host header matches the configured bind
     /// address allow-list.
+    ///
+    /// When the server is bound to a wildcard address (`0.0.0.0` / `::`), any
+    /// host header whose host part is a bare IP address at the correct port is
+    /// also accepted. IP-based host headers cannot be exploited by DNS
+    /// rebinding attacks (which require a controllable hostname), so this
+    /// preserves the rebinding defence while permitting legitimate access from
+    /// remote machines.
     pub fn allows_host_header(&self, host_header: &str) -> bool {
-        self.allowed_hosts
-            .contains(&host_header.trim().to_ascii_lowercase())
+        let normalized = host_header.trim().to_ascii_lowercase();
+        if self.allowed_hosts.contains(&normalized) {
+            return true;
+        }
+        // Additional check for wildcard binds: accept any IP-based host header
+        // at the configured port.
+        if let Ok(bind_addr) = self.bind_address.parse::<std::net::SocketAddr>()
+            && bind_addr.ip().is_unspecified()
+        {
+            // host_header for IPv4 looks like "1.2.3.4:port";
+            // for IPv6 it looks like "[::1]:port" — both are handled by
+            // SocketAddr's FromStr.
+            if let Ok(host_addr) = normalized.parse::<std::net::SocketAddr>()
+                && host_addr.port() == bind_addr.port()
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// Returns the resolved web bearer token (if token auth is enabled).
@@ -154,14 +178,17 @@ fn allowed_host_values(bind_address: &str) -> BTreeSet<String> {
             std::net::SocketAddr::V4(v4) => {
                 let host = format!("{}:{}", v4.ip(), v4.port()).to_ascii_lowercase();
                 allowed.insert(host);
-                if v4.ip().is_loopback() {
+                // Loopback (127.0.0.1) and unspecified/wildcard (0.0.0.0)
+                // both listen on the loopback interface, so `localhost` is a
+                // valid way to reach them.
+                if v4.ip().is_loopback() || v4.ip().is_unspecified() {
                     allowed.insert(format!("localhost:{}", v4.port()).to_ascii_lowercase());
                 }
             }
             std::net::SocketAddr::V6(v6) => {
                 let host = format!("[{}]:{}", v6.ip(), v6.port()).to_ascii_lowercase();
                 allowed.insert(host);
-                if v6.ip().is_loopback() {
+                if v6.ip().is_loopback() || v6.ip().is_unspecified() {
                     allowed.insert(format!("localhost:{}", v6.port()).to_ascii_lowercase());
                 }
             }
@@ -171,4 +198,102 @@ fn allowed_host_values(bind_address: &str) -> BTreeSet<String> {
     }
 
     allowed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use types::RunnerGlobalConfig;
+
+    fn make_state(bind: &str) -> WebState {
+        let mut global_config = RunnerGlobalConfig::default();
+        global_config.workspace_root = std::env::temp_dir().to_string_lossy().to_string();
+        WebState::new(
+            global_config,
+            std::path::PathBuf::from("/tmp/config.toml"),
+            bind.to_owned(),
+        )
+    }
+
+    // --- loopback bind (127.0.0.1) -----------------------------------------
+
+    #[test]
+    fn loopback_bind_accepts_localhost_header() {
+        let state = make_state("127.0.0.1:8881");
+        assert!(state.allows_host_header("localhost:8881"));
+    }
+
+    #[test]
+    fn loopback_bind_accepts_ip_header() {
+        let state = make_state("127.0.0.1:8881");
+        assert!(state.allows_host_header("127.0.0.1:8881"));
+    }
+
+    #[test]
+    fn loopback_bind_rejects_external_ip_header() {
+        let state = make_state("127.0.0.1:8881");
+        assert!(!state.allows_host_header("192.168.40.6:8881"));
+    }
+
+    #[test]
+    fn loopback_bind_rejects_arbitrary_hostname() {
+        let state = make_state("127.0.0.1:8881");
+        assert!(!state.allows_host_header("evil.example.com:8881"));
+    }
+
+    // --- wildcard bind (0.0.0.0) -------------------------------------------
+
+    #[test]
+    fn wildcard_bind_accepts_localhost_header() {
+        // 0.0.0.0 also listens on the loopback interface, so localhost must work.
+        let state = make_state("0.0.0.0:8881");
+        assert!(state.allows_host_header("localhost:8881"));
+    }
+
+    #[test]
+    fn wildcard_bind_accepts_external_ip_header() {
+        let state = make_state("0.0.0.0:8881");
+        assert!(state.allows_host_header("192.168.40.6:8881"));
+    }
+
+    #[test]
+    fn wildcard_bind_accepts_loopback_ip_header() {
+        let state = make_state("0.0.0.0:8881");
+        assert!(state.allows_host_header("127.0.0.1:8881"));
+    }
+
+    #[test]
+    fn wildcard_bind_rejects_wrong_port() {
+        let state = make_state("0.0.0.0:8881");
+        assert!(!state.allows_host_header("192.168.40.6:9999"));
+    }
+
+    #[test]
+    fn wildcard_bind_rejects_hostname_header() {
+        // Hostnames on a wildcard bind could still be DNS-rebinding vectors.
+        let state = make_state("0.0.0.0:8881");
+        assert!(!state.allows_host_header("evil.example.com:8881"));
+    }
+
+    #[test]
+    fn wildcard_bind_accepts_literal_0000_header() {
+        // The literal bind address itself is also in the set.
+        let state = make_state("0.0.0.0:8881");
+        assert!(state.allows_host_header("0.0.0.0:8881"));
+    }
+
+    // --- case / whitespace --------------------------------------------------
+
+    #[test]
+    fn host_matching_is_case_insensitive() {
+        let state = make_state("127.0.0.1:8881");
+        assert!(state.allows_host_header("Localhost:8881"));
+        assert!(state.allows_host_header("LOCALHOST:8881"));
+    }
+
+    #[test]
+    fn host_matching_trims_whitespace() {
+        let state = make_state("127.0.0.1:8881");
+        assert!(state.allows_host_header("  localhost:8881  "));
+    }
 }
