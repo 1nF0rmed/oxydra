@@ -62,15 +62,94 @@ window.CollectionEditor = (function () {
     var entriesContainer = el('div', 'ce-entries');
     container.appendChild(entriesContainer);
 
-    // Add button
+    // Add button + inline form
     var addRow = el('div', 'ce-add-row');
     var addBtn = el('button', 'btn btn-primary btn-sm');
     addBtn.type = 'button';
-    addBtn.textContent = meta.add_label || 'Add entry';
+    addBtn.textContent = '+ ' + (meta.add_label || 'Add entry');
+
+    // Inline form (shown instead of prompt)
+    var inlineForm = el('div', 'ce-inline-form');
+    inlineForm.style.display = 'none';
+
+    var keyInput = el('input', 'text-input ce-inline-key-input');
+    keyInput.type = 'text';
+    keyInput.placeholder = (meta.key_field && meta.key_field.label) ? meta.key_field.label + ' (unique name)' : 'Name';
+
+    var keyError = el('span', 'ce-inline-key-error');
+    keyError.style.display = 'none';
+
+    var inlineConfirmBtn = el('button', 'btn btn-primary btn-sm');
+    inlineConfirmBtn.type = 'button';
+    inlineConfirmBtn.textContent = 'Create';
+
+    var inlineCancelBtn = el('button', 'btn btn-muted btn-sm');
+    inlineCancelBtn.type = 'button';
+    inlineCancelBtn.textContent = 'Cancel';
+
+    inlineForm.appendChild(keyInput);
+    inlineForm.appendChild(inlineConfirmBtn);
+    inlineForm.appendChild(inlineCancelBtn);
+    inlineForm.appendChild(keyError);
+
+    function showInlineForm() {
+      addBtn.style.display = 'none';
+      inlineForm.style.display = '';
+      keyInput.value = '';
+      keyError.style.display = 'none';
+      keyInput.classList.remove('ce-key-input-error');
+      keyInput.focus();
+    }
+
+    function hideInlineForm() {
+      inlineForm.style.display = 'none';
+      addBtn.style.display = '';
+    }
+
+    function submitInlineForm() {
+      var key = keyInput.value.trim();
+      if (!key) {
+        keyError.textContent = 'Name is required.';
+        keyError.style.display = '';
+        keyInput.classList.add('ce-key-input-error');
+        return;
+      }
+      if (state.entries.some(function (e) { return e.key === key; })) {
+        keyError.textContent = 'An entry with this name already exists.';
+        keyError.style.display = '';
+        keyInput.classList.add('ce-key-input-error');
+        return;
+      }
+      var defaults = buildDefaults(entrySchemaFields);
+      addEntryCard(key, defaults, true);
+      fireChange();
+      hideInlineForm();
+      // Scroll new card into view
+      var lastCard = entriesContainer.lastElementChild;
+      if (lastCard) lastCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
     addBtn.addEventListener('click', function () {
-      showAddDialog();
+      if (isMap && meta.key_field) {
+        showInlineForm();
+      } else if (!isMap) {
+        var defaults2 = buildDefaults(entrySchemaFields);
+        addEntryCard(String(state.entries.length), defaults2, true);
+        fireChange();
+      }
     });
+
+    inlineConfirmBtn.addEventListener('click', submitInlineForm);
+    inlineCancelBtn.addEventListener('click', hideInlineForm);
+    keyInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); submitInlineForm(); }
+      if (e.key === 'Escape') hideInlineForm();
+      keyError.style.display = 'none';
+      keyInput.classList.remove('ce-key-input-error');
+    });
+
     addRow.appendChild(addBtn);
+    addRow.appendChild(inlineForm);
     container.appendChild(addRow);
 
     // ── Initialize entries ──────────────────────────────────────
@@ -83,34 +162,6 @@ window.CollectionEditor = (function () {
       entries.forEach(function (entry, idx) {
         addEntryCard(String(idx), entry, false);
       });
-    }
-
-    // ── Add dialog ──────────────────────────────────────────────
-
-    function showAddDialog() {
-      if (isMap && meta.key_field) {
-        // Prompt for the entry key
-        var keyLabel = meta.key_field.label || 'Name';
-        var key = window.prompt(keyLabel + ':');
-        if (!key || !key.trim()) return;
-        key = key.trim();
-
-        // Check for duplicate
-        if (state.entries.some(function (e) { return e.key === key; })) {
-          window.alert('An entry with name "' + key + '" already exists.');
-          return;
-        }
-
-        // Build defaults
-        var defaults = buildDefaults(entrySchemaFields);
-        addEntryCard(key, defaults, true);
-        fireChange();
-      } else if (!isMap) {
-        // Array: just add with defaults
-        var defaults2 = buildDefaults(entrySchemaFields);
-        addEntryCard(String(state.entries.length), defaults2, true);
-        fireChange();
-      }
     }
 
     // ── Entry card ──────────────────────────────────────────────
@@ -167,6 +218,13 @@ window.CollectionEditor = (function () {
         var badge = el('span', 'badge badge-muted ce-type-badge');
         badge.textContent = entryValues.provider_type;
         headerLeft.appendChild(badge);
+      }
+
+      // Active badge — shown when this entry is the currently selected provider
+      if (opts.activeKey && opts.activeKey === key) {
+        var activeBadge = el('span', 'badge badge-success ce-active-badge');
+        activeBadge.textContent = 'Active';
+        headerLeft.appendChild(activeBadge);
       }
 
       header.appendChild(headerLeft);

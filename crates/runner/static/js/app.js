@@ -208,14 +208,18 @@ function onboardingFactory() {
   }
   return {
     step: 1,
-    runnerWorkspaceRoot: '.oxydra/workspaces',
+    runnerWorkspaceRoot: 'workspaces',
     userId: 'default',
     userConfigPath: 'users/default.toml',
     providerName: 'openai',
     providerType: 'openai',
     providerApiKey: '',
     providerApiKeyEnv: 'OPENAI_API_KEY',
+    defaultModel: 'gpt-4o-mini',
     providerEnvResolved: false,
+    catalogModels: [],
+    catalogRefreshing: false,
+    customModelMode: false,
     busy: false,
     error: '',
     done: false,
@@ -350,6 +354,8 @@ function app() {
         if (this.currentPage === 'dashboard') {
           await this.loadStatus();
         } else if (this.currentPage === 'config-agent') {
+          // Always flush schema cache so newly-added providers appear in selection
+          this.schemaCache = null;
           await this.loadAgentConfig();
         } else if (this.currentPage === 'config-runner') {
           await this.loadRunnerConfig();
@@ -846,12 +852,6 @@ function app() {
           return;
         }
 
-        const preview = changedFields.slice(0, 12).join('\n');
-        const accepted = window.confirm(
-          `Save Runner configuration?\n\nChanged fields:\n${preview}${changedFields.length > 12 ? '\n...' : ''}`
-        );
-        if (!accepted) return;
-
         const result = await api(endpoint, {
           method: 'PATCH',
           body: patch,
@@ -915,12 +915,6 @@ function app() {
           return;
         }
 
-        const preview = changedFields.slice(0, 12).join('\n');
-        const accepted = window.confirm(
-          `Save Agent configuration?\n\nChanged fields:\n${preview}${changedFields.length > 12 ? '\n...' : ''}`
-        );
-        if (!accepted) return;
-
         const result = await api(endpoint, {
           method: 'PATCH',
           body: patch,
@@ -930,6 +924,8 @@ function app() {
           this.restartNotice = 'Configuration was saved. Restart is required for running daemon(s).';
         }
 
+        // Invalidate schema cache so newly added providers appear in the selection dropdown
+        this.schemaCache = null;
         // Reload the page
         await this.loadAgentConfig();
         await this.loadStatus();
@@ -985,12 +981,6 @@ function app() {
           this.showToast(`No effective changes for User ${this.selectedUserId} configuration.`, 'info');
           return;
         }
-
-        const preview = changedFields.slice(0, 12).join('\n');
-        const accepted = window.confirm(
-          `Save User ${this.selectedUserId} configuration?\n\nChanged fields:\n${preview}${changedFields.length > 12 ? '\n...' : ''}`
-        );
-        if (!accepted) return;
 
         const result = await api(endpoint, {
           method: 'PATCH',
@@ -1094,6 +1084,63 @@ function app() {
       return `Step ${this.onboardingWizard.step}`;
     },
 
+    onboardingProviderTypeChange(type) {
+      this.onboardingWizard.providerType = type;
+      this.onboardingWizard.customModelMode = false;
+      const defaults = window.OxydraOnboarding?.getProviderDefaults
+        ? window.OxydraOnboarding.getProviderDefaults(type)
+        : null;
+      if (defaults) {
+        this.onboardingWizard.providerName = defaults.name;
+        this.onboardingWizard.providerApiKeyEnv = defaults.envVar;
+        this.onboardingWizard.defaultModel = defaults.model;
+      }
+      this.onboardingLoadCatalogModels(type);
+    },
+
+    // Map wizard provider type to catalog provider ID
+    onboardingCatalogProviderId(providerType) {
+      const map = { openai: 'openai', anthropic: 'anthropic', gemini: 'gemini', openai_responses: 'openai' };
+      return map[providerType] || providerType;
+    },
+
+    async onboardingLoadCatalogModels(providerType) {
+      try {
+        const catalog = await this.loadCatalog();
+        const providers = catalog.providers || [];
+        const catalogId = this.onboardingCatalogProviderId(providerType);
+        const provider = providers.find(p => p.id === catalogId);
+        this.onboardingWizard.catalogModels = provider
+          ? provider.models.map(m => m.id).sort()
+          : [];
+      } catch (_e) {
+        this.onboardingWizard.catalogModels = [];
+      }
+    },
+
+    async onboardingRefreshCatalog() {
+      this.onboardingWizard.catalogRefreshing = true;
+      try {
+        await api('/catalog/refresh', { method: 'POST', body: {} });
+        this.catalogCache = null;
+        await this.onboardingLoadCatalogModels(this.onboardingWizard.providerType);
+        this.showToast('Catalog refreshed.', 'success');
+      } catch (e) {
+        this.showToast('Catalog refresh failed: ' + e.message, 'error');
+      } finally {
+        this.onboardingWizard.catalogRefreshing = false;
+      }
+    },
+
+    onboardingModelSelectChange(val) {
+      if (val === '__custom__') {
+        this.onboardingWizard.customModelMode = true;
+        this.onboardingWizard.defaultModel = '';
+      } else {
+        this.onboardingWizard.defaultModel = val;
+      }
+    },
+
     onboardingSummary() {
       return [
         `Workspace root: ${this.onboardingWizard.runnerWorkspaceRoot || '(not set)'}`,
@@ -1101,6 +1148,7 @@ function app() {
         `User config path: ${this.onboardingWizard.userConfigPath || '(not set)'}`,
         `Provider: ${this.onboardingWizard.providerName || '(not set)'}`,
         `Provider type: ${this.onboardingWizard.providerType || '(not set)'}`,
+        `Default model: ${this.onboardingWizard.defaultModel || '(not set)'}`,
         this.onboardingWizard.providerApiKey
           ? 'Provider credential: inline API key'
           : `Provider credential env: ${this.onboardingWizard.providerApiKeyEnv || '(not set)'}`,
@@ -1166,6 +1214,8 @@ function app() {
           await this.loadUsersPage();
           this.onboardingWizard.step = 4;
           this.showToast('User registration completed.', 'success');
+          // Pre-load catalog models for the default provider type
+          this.onboardingLoadCatalogModels(this.onboardingWizard.providerType);
           return;
         }
 
@@ -1183,6 +1233,10 @@ function app() {
                 },
               },
             },
+            selection: {
+              provider: providerName,
+              model: this.onboardingWizard.defaultModel.trim() || 'gpt-4o-mini',
+            },
           };
 
           if (this.onboardingWizard.providerApiKey.trim()) {
@@ -1195,6 +1249,8 @@ function app() {
 
           await api('/config/agent/validate', { method: 'POST', body: providerPatch });
           await api('/config/agent', { method: 'PATCH', body: providerPatch });
+          // Invalidate schema cache so the new provider appears in the selection dropdown
+          this.schemaCache = null;
           await this.loadAgentConfig();
           await this.refreshOnboardingStatus();
           this.onboardingWizard.providerEnvResolved = Boolean(this.onboarding.checks?.has_provider);
@@ -1206,8 +1262,8 @@ function app() {
         if (this.onboardingWizard.step === 5) {
           this.onboardingWizard.done = true;
           await this.refreshOnboardingStatus();
-          this.showToast('Setup complete. You can now use the dashboard.', 'success');
-          window.location.hash = '#/';
+          this.showToast('Setup complete! Configure your agent settings now.', 'success');
+          window.location.hash = '#/config/agent';
         }
       } catch (error) {
         this.onboardingWizard.error = error.message;

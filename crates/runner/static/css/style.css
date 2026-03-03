@@ -631,7 +631,8 @@ select.text-input:focus {
 /* ── Wizard ─────────────────────────────────────────────────────── */
 
 .wizard-card {
-  padding: 16px;
+  padding: 20px 24px;
+  max-width: 640px;
 }
 
 .wizard-header {
@@ -648,6 +649,11 @@ select.text-input:focus {
 .wizard-step {
   display: grid;
   gap: 10px;
+}
+
+.wizard-step-content > div {
+  display: grid;
+  gap: 0;
 }
 
 .summary-list {
@@ -1696,4 +1702,295 @@ select.text-input:focus {
 
 .user-senders-entries {
   margin-bottom: 12px;
+}
+
+/* ── Page header bar (sticky save) ─────────────────────────────── */
+
+.page-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: linear-gradient(160deg, #faf8ff 0%, #f2ecff 100%);
+  padding: 12px 0 14px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── Wizard stepper ─────────────────────────────────────────────── */
+
+.wizard-stepper {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  margin: 0 -4px 24px;
+  padding: 0;
+  position: relative;
+}
+
+.wizard-step-pip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  position: relative;
+}
+
+/* Connector line between pips */
+.wizard-step-pip:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  right: 50%;
+  width: 100%;
+  height: 2px;
+  background: #c9bfe8;
+}
+
+.wizard-step-pip.pip-done:not(:first-child)::before,
+.wizard-step-pip.pip-active:not(:first-child)::before {
+  background: var(--primary);
+}
+
+.pip-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #e8e1f5;
+  color: #8875b2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  z-index: 1;
+  position: relative;
+  transition: background 0.2s, color 0.2s;
+  flex-shrink: 0;
+}
+
+.pip-active .pip-circle {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.22);
+}
+
+.pip-done .pip-circle {
+  background: var(--primary);
+  color: #fff;
+}
+
+.pip-label {
+  margin-top: 5px;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-align: center;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pip-active .pip-label {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.pip-done .pip-label {
+  color: var(--primary);
+}
+
+/* ── Wizard step content ────────────────────────────────────────── */
+
+.wizard-step-content {
+  min-height: 220px;
+}
+
+.wizard-step-title {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.wizard-step-desc {
+  margin: 0 0 16px;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.wizard-field-label {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+.wizard-field-label > span {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wizard-model-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wizard-back-model-btn {
+  margin-top: 6px;
+}
+
+.wizard-hint {
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.wizard-checklist {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.wizard-check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.wizard-env-ok {
+  margin-top: 8px;
+  font-size: 0.84rem;
+}
+
+.wizard-done-box {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px solid #a7f3d0;
+  border-radius: 10px;
+  background: #f0fdf4;
+}
+
+.wizard-done-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #065f46;
+}
+
+.wizard-done-desc {
+  margin: 0 0 14px;
+  font-size: 0.86rem;
+  color: #047857;
+  line-height: 1.5;
+}
+
+/* ── Provider workflow note ─────────────────────────────────────── */
+
+.provider-workflow-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fff7ed;
+  font-size: 0.83rem;
+  color: #92400e;
+  line-height: 1.45;
+}
+
+.provider-workflow-note-icon {
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+.provider-workflow-note strong {
+  color: #78350f;
+}
+
+/* ── Collection editor inline add form ──────────────────────────── */
+
+.ce-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid #c4b5fd;
+  border-radius: 8px;
+  background: #f5f0ff;
+  margin-top: 8px;
+}
+
+.ce-inline-key-input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.ce-inline-key-input.ce-key-input-error {
+  border-color: var(--danger);
+}
+
+.ce-inline-key-error {
+  display: none;
+  color: var(--danger);
+  font-size: 0.78rem;
+  width: 100%;
+}
+
+/* ── Active provider badge ──────────────────────────────────────── */
+
+.ce-active-badge {
+  font-size: 0.65rem;
+  padding: 1px 7px;
+}
+
+/* ── Mobile responsive for new elements ─────────────────────────── */
+
+@media (max-width: 920px) {
+  .page-header-bar {
+    padding: 10px 0 12px;
+    position: static;
+  }
+
+  .wizard-stepper {
+    gap: 0;
+    margin-bottom: 20px;
+  }
+
+  .pip-label {
+    display: none;
+  }
+
+  .wizard-step-pip::before {
+    top: 14px;
+  }
+}
+
+@media (max-width: 600px) {
+  .page-header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .ce-inline-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

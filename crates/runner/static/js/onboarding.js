@@ -7,6 +7,34 @@
     'Review',
   ];
 
+  // Sensible defaults per provider type for the wizard.
+  const PROVIDER_DEFAULTS = {
+    openai: {
+      name: 'openai',
+      envVar: 'OPENAI_API_KEY',
+      model: 'gpt-4o-mini',
+    },
+    anthropic: {
+      name: 'anthropic',
+      envVar: 'ANTHROPIC_API_KEY',
+      model: 'claude-sonnet-4-6',
+    },
+    gemini: {
+      name: 'google-aistudio',
+      envVar: 'GEMINI_API_KEY',
+      model: 'gemini-2.0-flash',
+    },
+    openai_responses: {
+      name: 'openai',
+      envVar: 'OPENAI_API_KEY',
+      model: 'gpt-4o-mini',
+    },
+  };
+
+  function getProviderDefaults(type) {
+    return PROVIDER_DEFAULTS[type] || null;
+  }
+
   function inferDefaultUserConfigPath(userId) {
     const trimmed = (userId || '').trim();
     if (!trimmed) {
@@ -18,14 +46,18 @@
   function createOnboardingState() {
     return {
       step: 1,
-      runnerWorkspaceRoot: '.oxydra/workspaces',
+      runnerWorkspaceRoot: 'workspaces',
       userId: 'default',
       userConfigPath: 'users/default.toml',
       providerName: 'openai',
       providerType: 'openai',
       providerApiKey: '',
       providerApiKeyEnv: 'OPENAI_API_KEY',
+      defaultModel: 'gpt-4o-mini',
       providerEnvResolved: false,
+      catalogModels: [],
+      catalogRefreshing: false,
+      customModelMode: false,
       busy: false,
       error: '',
       done: false,
@@ -38,6 +70,8 @@
 
   window.OxydraOnboarding = {
     STEP_LABELS,
+    PROVIDER_DEFAULTS,
+    getProviderDefaults,
     inferDefaultUserConfigPath,
     createOnboardingState,
     stepLabel,

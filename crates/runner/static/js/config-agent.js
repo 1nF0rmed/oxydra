@@ -266,11 +266,29 @@ window.AgentConfigEditor = (function () {
     function renderCollectionSection(parent, sectionSchema, configValues, renderOpts) {
       insertGroupHeader(parent, sectionSchema);
 
+      // Resolve the active key for this collection (e.g. currently selected provider)
+      var activeKey = null;
+      if (sectionSchema.id === 'providers') {
+        activeKey = resolveValue('selection.provider', configValues) || null;
+      }
+
       // For always_expanded collections skip the wrapping section card and
       // render the collection editor directly under the group header.
       if (sectionSchema.always_expanded) {
         var directContainer = el('div', 'sr-collection-direct');
         parent.appendChild(directContainer);
+
+        // Add workflow guidance for the providers collection
+        if (sectionSchema.id === 'providers') {
+          var note = el('div', 'provider-workflow-note');
+          note.innerHTML =
+            '<span class="provider-workflow-note-icon">💡</span>' +
+            '<span>After adding or editing a provider here, click <strong>Validate &amp; Save</strong>. ' +
+            'Then scroll to the <strong>Model Selection</strong> section to set it as the active provider ' +
+            'and pick a model.</span>';
+          directContainer.appendChild(note);
+        }
+
         var collectionData = getCollectionData(sectionSchema.id, configValues);
         var collectionEditor = window.CollectionEditor.renderCollection(
           directContainer,
@@ -279,6 +297,7 @@ window.AgentConfigEditor = (function () {
           {
             dynamicSources: renderOpts.dynamicSources,
             catalog: renderOpts.catalog,
+            activeKey: activeKey,
             onChange: function (patch) {
               collectionChanges[sectionSchema.id] = patch;
             },
@@ -309,6 +328,7 @@ window.AgentConfigEditor = (function () {
           {
             dynamicSources: renderOpts.dynamicSources,
             catalog: renderOpts.catalog,
+            activeKey: activeKey,
             onChange: function (patch) {
               collectionChanges[sectionSchema.id] = patch;
             },

@@ -124,7 +124,17 @@
 
       <!-- ═══════════ Agent Config ═══════════ -->
       <div x-show="currentPage === 'config-agent' && !pageError" x-cloak>
-        <h2>Agent Configuration</h2>
+        <div class="page-header-bar">
+          <h2 style="margin:0">Agent Configuration</h2>
+          <div x-show="agentEditor" class="page-header-actions">
+            <span class="badge" :class="agentEditor && agentEditor.fileExists ? 'badge-success' : 'badge-muted'"
+                  x-text="agentEditor && agentEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
+            <button class="btn btn-primary" :disabled="saving" @click="saveAgentConfig()">
+              <span x-show="saving" class="spinner"></span>
+              Validate &amp; Save
+            </button>
+          </div>
+        </div>
 
         <template x-if="loading && !agentEditor">
           <div class="skeleton">
@@ -137,8 +147,6 @@
 
         <div x-show="agentEditor">
           <div class="config-meta">
-            <span class="badge" :class="agentEditor && agentEditor.fileExists ? 'badge-success' : 'badge-muted'"
-                  x-text="agentEditor && agentEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
             <span class="file-path" x-text="agentEditor && agentEditor.filePath"></span>
           </div>
 
@@ -400,85 +408,161 @@
         <h2>Setup Wizard</h2>
 
         <div class="wizard-card">
-          <div class="wizard-header">
-            <span class="badge badge-muted" x-text="`Step ${onboardingWizard.step} of 5`"></span>
-            <h3 x-text="onboardingStepLabel()"></h3>
+          <!-- Step progress bar -->
+          <div class="wizard-stepper" role="list">
+            <template x-for="n in [1,2,3,4,5]" :key="n">
+              <div class="wizard-step-pip" role="listitem"
+                   :class="{ 'pip-done': n < onboardingWizard.step, 'pip-active': n === onboardingWizard.step, 'pip-pending': n > onboardingWizard.step }">
+                <div class="pip-circle">
+                  <span x-show="n < onboardingWizard.step">✓</span>
+                  <span x-show="n >= onboardingWizard.step" x-text="n"></span>
+                </div>
+                <span class="pip-label" x-text="['Welcome','Runner','User','Provider','Review'][n-1]"></span>
+              </div>
+            </template>
           </div>
 
-          <div class="wizard-step" x-show="onboardingWizard.step === 1">
-            <p>Welcome to Oxydra Web Configurator. This wizard creates the minimum configuration for a working setup.</p>
-          </div>
+          <div class="wizard-step-content">
+            <!-- Step 1: Welcome -->
+            <div x-show="onboardingWizard.step === 1">
+              <h3 class="wizard-step-title">Welcome to Oxydra</h3>
+              <p class="wizard-step-desc">This wizard will set up the minimum configuration needed to start using Oxydra. It takes about 2 minutes.</p>
+              <div class="wizard-checklist">
+                <div class="wizard-check-item">📁 <span>Configure the workspace directory</span></div>
+                <div class="wizard-check-item">👤 <span>Create your first user</span></div>
+                <div class="wizard-check-item">🔑 <span>Connect an AI provider</span></div>
+                <div class="wizard-check-item">✅ <span>Ready to use</span></div>
+              </div>
+            </div>
 
-          <div class="wizard-step" x-show="onboardingWizard.step === 2">
-            <label>
-              <span>Workspace Root</span>
-              <input type="text" class="text-input" :value="onboardingWizard.runnerWorkspaceRoot"
-                     @input="onboardingWizard.runnerWorkspaceRoot = $event.target.value"
-                     @keydown.enter="onboardingNextStep()">
-            </label>
-          </div>
+            <!-- Step 2: Runner Configuration -->
+            <div x-show="onboardingWizard.step === 2">
+              <h3 class="wizard-step-title">Runner Configuration</h3>
+              <p class="wizard-step-desc">Set the directory where Oxydra stores agent workspaces and session data. This can be an absolute path or a relative path from the config directory.</p>
+              <label class="wizard-field-label">
+                <span>Workspace Root</span>
+                <input type="text" class="text-input" :value="onboardingWizard.runnerWorkspaceRoot"
+                       @input="onboardingWizard.runnerWorkspaceRoot = $event.target.value"
+                       @keydown.enter="onboardingNextStep()"
+                       placeholder="workspaces">
+              </label>
+            </div>
 
-          <div class="wizard-step" x-show="onboardingWizard.step === 3">
-            <label>
-              <span>User ID</span>
-              <input type="text" class="text-input" :value="onboardingWizard.userId"
-                     @input="onboardingWizard.userId = $event.target.value"
-                     @keydown.enter="onboardingNextStep()">
-            </label>
-            <label>
-              <span>User Config Path</span>
-              <input type="text" class="text-input" :value="onboardingWizard.userConfigPath"
-                     @input="onboardingWizard.userConfigPath = $event.target.value"
-                     @keydown.enter="onboardingNextStep()">
-            </label>
-            <button class="btn btn-muted" @click="onboardingAutofillUserPath()">Use Suggested Path</button>
-          </div>
+            <!-- Step 3: Register First User -->
+            <div x-show="onboardingWizard.step === 3">
+              <h3 class="wizard-step-title">Register First User</h3>
+              <p class="wizard-step-desc">Create your first user account. The User ID is used to identify the user in the system and start/stop their daemon.</p>
+              <label class="wizard-field-label">
+                <span>User ID</span>
+                <input type="text" class="text-input" :value="onboardingWizard.userId"
+                       @input="onboardingWizard.userId = $event.target.value"
+                       @keydown.enter="onboardingNextStep()"
+                       placeholder="default">
+              </label>
+              <label class="wizard-field-label">
+                <span>User Config Path <span class="wizard-hint">(relative to runner config directory)</span></span>
+                <input type="text" class="text-input" :value="onboardingWizard.userConfigPath"
+                       @input="onboardingWizard.userConfigPath = $event.target.value"
+                       @keydown.enter="onboardingNextStep()">
+              </label>
+              <button class="btn btn-muted btn-sm" @click="onboardingAutofillUserPath()">Auto-fill from User ID</button>
+            </div>
 
-          <div class="wizard-step" x-show="onboardingWizard.step === 4">
-            <label>
-              <span>Provider Name</span>
-              <input type="text" class="text-input" :value="onboardingWizard.providerName"
-                     @input="onboardingWizard.providerName = $event.target.value">
-            </label>
-            <label>
-              <span>Provider Type</span>
-              <select class="text-input" :value="onboardingWizard.providerType"
-                      @change="onboardingWizard.providerType = $event.target.value">
-                <option value="openai">openai</option>
-                <option value="anthropic">anthropic</option>
-                <option value="gemini">gemini</option>
-                <option value="openai_responses">openai_responses</option>
-              </select>
-            </label>
-            <label>
-              <span>API Key (optional if env var is set)</span>
-              <input type="password" class="text-input" :value="onboardingWizard.providerApiKey"
-                     @input="onboardingWizard.providerApiKey = $event.target.value">
-            </label>
-            <label>
-              <span>API Key Env Var</span>
-              <input type="text" class="text-input" :value="onboardingWizard.providerApiKeyEnv"
-                     @input="onboardingWizard.providerApiKeyEnv = $event.target.value"
-                     @keydown.enter="onboardingNextStep()">
-            </label>
-            <p class="text-success" x-show="onboardingWizard.providerEnvResolved">Provider credentials appear to be resolved.</p>
-          </div>
+            <!-- Step 4: Provider Setup -->
+            <div x-show="onboardingWizard.step === 4">
+              <h3 class="wizard-step-title">Provider Setup</h3>
+              <p class="wizard-step-desc">Connect an AI provider. The <strong>Provider Name</strong> is your custom identifier (e.g. "google-aistudio"). The <strong>Provider Type</strong> is the API protocol. Selecting a type auto-fills the other fields.</p>
+              <label class="wizard-field-label">
+                <span>Provider Type</span>
+                <select class="text-input" :value="onboardingWizard.providerType"
+                        @change="onboardingProviderTypeChange($event.target.value)">
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="gemini">Gemini (Google AI Studio)</option>
+                  <option value="openai_responses">OpenAI Responses API</option>
+                </select>
+              </label>
+              <label class="wizard-field-label">
+                <span>Provider Name <span class="wizard-hint">(your custom identifier)</span></span>
+                <input type="text" class="text-input" :value="onboardingWizard.providerName"
+                       @input="onboardingWizard.providerName = $event.target.value"
+                       placeholder="e.g. openai, google-aistudio">
+              </label>
+              <div class="wizard-field-label">
+                <div class="wizard-model-label-row">
+                  <span>Default Model</span>
+                  <button type="button" class="btn btn-muted btn-sm"
+                          @click="onboardingRefreshCatalog()"
+                          :disabled="onboardingWizard.catalogRefreshing || onboardingWizard.busy">
+                    <span x-show="!onboardingWizard.catalogRefreshing">↻ Refresh catalog</span>
+                    <span x-show="onboardingWizard.catalogRefreshing">Loading…</span>
+                  </button>
+                </div>
+                <!-- Catalog dropdown when models are available -->
+                <select class="text-input"
+                        x-show="onboardingWizard.catalogModels.length > 0 && !onboardingWizard.customModelMode"
+                        @change="onboardingModelSelectChange($event.target.value)">
+                  <template x-for="m in onboardingWizard.catalogModels" :key="m">
+                    <option :value="m" x-text="m" :selected="m === onboardingWizard.defaultModel"></option>
+                  </template>
+                  <option value="__custom__">— Enter custom model ID —</option>
+                </select>
+                <!-- Text input: fallback or custom mode -->
+                <div x-show="onboardingWizard.catalogModels.length === 0 || onboardingWizard.customModelMode">
+                  <input type="text" class="text-input" :value="onboardingWizard.defaultModel"
+                         @input="onboardingWizard.defaultModel = $event.target.value"
+                         placeholder="e.g. gpt-4o-mini, gemini-2.0-flash">
+                  <button type="button" class="btn btn-muted btn-sm wizard-back-model-btn"
+                          x-show="onboardingWizard.customModelMode && onboardingWizard.catalogModels.length > 0"
+                          @click="onboardingWizard.customModelMode = false; onboardingWizard.defaultModel = (window.OxydraOnboarding?.getProviderDefaults(onboardingWizard.providerType) || {}).model || ''">
+                    ← Back to list
+                  </button>
+                </div>
+              </div>
+              <label class="wizard-field-label">
+                <span>API Key Env Var <span class="wizard-hint">(environment variable that holds your key)</span></span>
+                <input type="text" class="text-input" :value="onboardingWizard.providerApiKeyEnv"
+                       @input="onboardingWizard.providerApiKeyEnv = $event.target.value"
+                       @keydown.enter="onboardingNextStep()">
+              </label>
+              <label class="wizard-field-label">
+                <span>API Key <span class="wizard-hint">(optional: enter directly instead of via env var)</span></span>
+                <input type="password" class="text-input" :value="onboardingWizard.providerApiKey"
+                       @input="onboardingWizard.providerApiKey = $event.target.value">
+              </label>
+              <p class="text-success wizard-env-ok" x-show="onboardingWizard.providerEnvResolved">✓ Provider credentials appear to be resolved via environment variable.</p>
+            </div>
 
-          <div class="wizard-step" x-show="onboardingWizard.step === 5">
-            <p>Review your setup choices:</p>
-            <ul class="summary-list">
-              <template x-for="line in onboardingSummary()" :key="line">
-                <li x-text="line"></li>
-              </template>
-            </ul>
-            <p class="text-success" x-show="onboardingWizard.done">Setup is complete.</p>
+            <!-- Step 5: Review -->
+            <div x-show="onboardingWizard.step === 5">
+              <h3 class="wizard-step-title">Review &amp; Complete</h3>
+              <p class="wizard-step-desc">Your setup is saved. Here's a summary of what was configured:</p>
+              <ul class="summary-list">
+                <template x-for="line in onboardingSummary()" :key="line">
+                  <li x-text="line"></li>
+                </template>
+              </ul>
+              <div x-show="onboardingWizard.done" class="wizard-done-box">
+                <p class="wizard-done-title">🎉 Setup complete!</p>
+                <p class="wizard-done-desc">You can now go to Agent Config to fine-tune your model selection, or use the Control panel to start your agent daemon.</p>
+                <div class="actions-row">
+                  <a href="#/config/agent" class="btn btn-primary" @click="currentPage = 'config-agent'">Open Agent Config</a>
+                  <a href="#/control" class="btn btn-muted" @click="currentPage = 'control'">Go to Control Panel</a>
+                </div>
+              </div>
+            </div>
           </div>
 
           <p class="error-text" x-show="onboardingWizard.error" x-text="onboardingWizard.error"></p>
 
           <div class="wizard-actions">
-            <button class="btn btn-muted" :disabled="onboardingWizard.busy || onboardingWizard.step === 1" @click="onboardingPreviousStep()">Back</button>
-            <button class="btn btn-primary" :disabled="onboardingWizard.busy" @click="onboardingNextStep()">
+            <button class="btn btn-muted"
+                    :disabled="onboardingWizard.busy || onboardingWizard.step === 1 || onboardingWizard.done"
+                    @click="onboardingPreviousStep()">Back</button>
+            <button class="btn btn-primary"
+                    :disabled="onboardingWizard.busy || onboardingWizard.done"
+                    @click="onboardingNextStep()"
+                    x-show="!onboardingWizard.done">
               <span x-show="onboardingWizard.busy" class="spinner"></span>
               <span x-text="onboardingWizard.step === 5 ? 'Finish' : 'Next'"></span>
             </button>
