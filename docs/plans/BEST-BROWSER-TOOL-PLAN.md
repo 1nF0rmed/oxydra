@@ -717,28 +717,44 @@ cargo clippy -p tools -p runner --all-targets --all-features -- -D warnings
 cargo test -p tools -p runner -- --test-threads=1
 ```
 
-### Phase 3: Skill and Reference Updates
+### Phase 3: Skill and Reference Updates ✅
 
 **Files:**
-- `config/skills/BrowserAutomation/SKILL.md` — Rewrite per Section 4.3
-- `config/skills/BrowserAutomation/references/pinchtab-api.md` — Update per
-  Section 4.4
+- `config/skills/BrowserAutomation/SKILL.md` — ✅ Rewritten per Section 4.3:
+  tool-first approach with `browser` tool for hot path, curl for secondary
+  operations. Added Quick Start, Tab Management, Action Kinds sections.
+  Replaced File Integration with File Operations section. ~1358 estimated
+  tokens, well within 3000 cap.
+- `config/skills/BrowserAutomation/references/pinchtab-api.md` — ✅ Updated
+  per Section 4.4: added tab locking section with correct `timeoutSec` field
+  name, lock/unlock/renew examples, known documentation errors table, and
+  all endpoint details verified from Go source.
 
-**Verify:** Skill parsing tests, token cap test, content validation tests
+**Verify:** ✅
+```
+cargo fmt --all
+cargo clippy -p tools -p runner --all-targets --all-features -- -D warnings
+cargo test -p tools -p runner -- --test-threads=1
+```
 
-### Phase 4: Tests
+### Phase 4: Tests ✅
 
-**New tests:**
-1. `navigate_script_includes_lock_and_trap_exit` — script has lock + `trap`
-2. `act_script_includes_lock_renewal` — re-locks before action
-3. `tabs_script_has_no_locking` — list-tabs skips locking
-4. `owner_derived_from_session_id` — uses context.session_id
-5. `owner_fallback_when_no_session_id` — generates UUID
-6. `navigate_script_uses_correct_snapshot_params` — format=compact, etc.
-7. Updated skill content tests for new SKILL.md structure
-8. Updated runner config tests for BRIDGE_MAX_TABS=20
+**Tests updated/verified:**
+1. `navigate_script_includes_lock_and_trap_exit` — ✅ (Phase 2)
+2. `act_script_includes_lock_renewal` — ✅ (Phase 2)
+3. `tabs_script_has_no_locking` — ✅ (Phase 2)
+4. `owner_derived_from_session_id` — ✅ (Phase 2)
+5. `owner_fallback_when_no_session_id` — ✅ (Phase 2)
+6. `navigate_script_uses_correct_snapshot_params` — ✅ (Phase 2)
+7. Updated skill content tests for new SKILL.md structure — ✅ Updated
+   `actual_browser_skill_content_within_token_cap_and_has_key_sections`,
+   `actual_browser_skill_renders_with_pinchtab_url_substituted`, and
+   `actual_browser_skill_appears_in_formatted_prompt` in `crates/runner/src/skills.rs`
+   to validate new sections (Quick Start, Tab Management, Action Kinds,
+   File Operations) and new rendered URL patterns (screenshot, pdf, download, upload).
+8. Updated runner config tests for BRIDGE_MAX_TABS=20 — ✅ (Phase 1)
 
-**Verify:**
+**Verify:** ✅
 ```
 cargo fmt --all
 cargo clippy -p tools -p runner --all-targets --all-features -- -D warnings

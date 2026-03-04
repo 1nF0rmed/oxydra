@@ -1419,8 +1419,20 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
             "should have main heading"
         );
         assert!(
+            skill.content.contains("### Quick Start"),
+            "should have quick start section"
+        );
+        assert!(
             skill.content.contains("### Core Loop"),
             "should have core loop section"
+        );
+        assert!(
+            skill.content.contains("### Tab Management"),
+            "should have tab management section"
+        );
+        assert!(
+            skill.content.contains("### Action Kinds"),
+            "should have action kinds section"
         );
         assert!(
             skill.content.contains("### Key Endpoints"),
@@ -1431,12 +1443,17 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
             "should have best practices section"
         );
         assert!(
-            skill.content.contains("### File Integration"),
-            "should have file integration section"
+            skill.content.contains("### File Operations"),
+            "should have file operations section"
         );
         assert!(
             skill.content.contains("### If Blocked"),
             "should have if-blocked section"
+        );
+        // The skill should teach the `browser` tool for the hot path.
+        assert!(
+            skill.content.contains("browser(action="),
+            "should document the browser tool for hot-path operations"
         );
 
         // Key template placeholders.
@@ -1542,20 +1559,24 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
             rendered.content.contains("http://127.0.0.1:9867"),
             "rendered content should contain the substituted URL"
         );
-        // Key curl examples should be present with the substituted URL.
-        assert!(
-            rendered.content.contains("http://127.0.0.1:9867/navigate"),
-            "should contain navigate endpoint with substituted URL"
-        );
+        // Key curl examples for file operations should have the substituted URL.
         assert!(
             rendered
                 .content
-                .contains("http://127.0.0.1:9867/snapshot?tabId=$TAB"),
-            "should contain snapshot endpoint with substituted URL"
+                .contains("http://127.0.0.1:9867/screenshot"),
+            "should contain screenshot endpoint with substituted URL"
         );
         assert!(
-            rendered.content.contains("http://127.0.0.1:9867/action"),
-            "should contain action endpoint with substituted URL"
+            rendered.content.contains("http://127.0.0.1:9867/pdf"),
+            "should contain pdf endpoint with substituted URL"
+        );
+        assert!(
+            rendered.content.contains("http://127.0.0.1:9867/download"),
+            "should contain download endpoint with substituted URL"
+        );
+        assert!(
+            rendered.content.contains("http://127.0.0.1:9867/upload"),
+            "should contain upload endpoint with substituted URL"
         );
         // $BRIDGE_TOKEN should remain as a shell env var (NOT substituted).
         assert!(
@@ -1595,8 +1616,12 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
             "prompt should contain the browser skill heading"
         );
         assert!(
-            prompt.contains("http://127.0.0.1:9867/navigate"),
-            "prompt should contain rendered navigate URL"
+            prompt.contains("http://127.0.0.1:9867/screenshot"),
+            "prompt should contain rendered screenshot URL"
+        );
+        assert!(
+            prompt.contains("### Quick Start"),
+            "prompt should contain the quick start section"
         );
         assert!(
             prompt.contains("### Core Loop"),

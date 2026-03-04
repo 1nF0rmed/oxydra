@@ -28,5 +28,3 @@ debug = true
 [profile.release]
 debug = false
 strip = true
-lto = "thin"
-codegen-units = 256
