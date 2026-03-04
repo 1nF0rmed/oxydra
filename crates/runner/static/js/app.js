@@ -1098,18 +1098,24 @@ function app() {
       this.onboardingLoadCatalogModels(type);
     },
 
-    // Map wizard provider type to catalog provider ID
-    onboardingCatalogProviderId(providerType) {
-      const map = { openai: 'openai', anthropic: 'anthropic', gemini: 'gemini', openai_responses: 'openai' };
-      return map[providerType] || providerType;
-    },
-
     async onboardingLoadCatalogModels(providerType) {
+      // Try multiple catalog provider IDs in order of preference.
+      // The pinned snapshot uses "google" for Gemini; live models.dev may use "gemini".
+      const candidateIds = {
+        openai: ['openai'],
+        anthropic: ['anthropic'],
+        gemini: ['google', 'gemini', 'google-aistudio'],
+        openai_responses: ['openai'],
+      }[providerType] || [providerType];
+
       try {
         const catalog = await this.loadCatalog();
         const providers = catalog.providers || [];
-        const catalogId = this.onboardingCatalogProviderId(providerType);
-        const provider = providers.find(p => p.id === catalogId);
+        let provider = null;
+        for (const id of candidateIds) {
+          provider = providers.find(p => p.id === id);
+          if (provider) break;
+        }
         this.onboardingWizard.catalogModels = provider
           ? provider.models.map(m => m.id).sort()
           : [];
@@ -1138,6 +1144,34 @@ function app() {
         this.onboardingWizard.defaultModel = '';
       } else {
         this.onboardingWizard.defaultModel = val;
+      }
+    },
+
+    // Called by x-effect to imperatively populate the model <select>.
+    // More reliable than x-for inside <select> with x-show in Alpine.js.
+    onboardingBuildModelSelect(el) {
+      const models = this.onboardingWizard.catalogModels;
+      const current = this.onboardingWizard.defaultModel;
+      el.innerHTML = '';
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        opt.selected = m === current;
+        el.appendChild(opt);
+      });
+      const customOpt = document.createElement('option');
+      customOpt.value = '__custom__';
+      customOpt.textContent = '— Enter custom model ID —';
+      el.appendChild(customOpt);
+      // Ensure current value is selected; if not in list, pick first model
+      if (current && el.value !== current && current !== '__custom__') {
+        if (models.includes(current)) {
+          el.value = current;
+        } else if (models.length > 0) {
+          el.value = models[0];
+          this.onboardingWizard.defaultModel = models[0];
+        }
       }
     },
 

@@ -501,12 +501,8 @@
                 <!-- Catalog dropdown when models are available -->
                 <select class="text-input"
                         x-show="onboardingWizard.catalogModels.length > 0 && !onboardingWizard.customModelMode"
-                        @change="onboardingModelSelectChange($event.target.value)">
-                  <template x-for="m in onboardingWizard.catalogModels" :key="m">
-                    <option :value="m" x-text="m" :selected="m === onboardingWizard.defaultModel"></option>
-                  </template>
-                  <option value="__custom__">— Enter custom model ID —</option>
-                </select>
+                        x-effect="onboardingBuildModelSelect($el)"
+                        @change="onboardingModelSelectChange($event.target.value)"></select>
                 <!-- Text input: fallback or custom mode -->
                 <div x-show="onboardingWizard.catalogModels.length === 0 || onboardingWizard.customModelMode">
                   <input type="text" class="text-input" :value="onboardingWizard.defaultModel"
