@@ -1554,9 +1554,7 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
             "should contain snapshot endpoint with substituted URL"
         );
         assert!(
-            rendered
-                .content
-                .contains("http://127.0.0.1:9867/action"),
+            rendered.content.contains("http://127.0.0.1:9867/action"),
             "should contain action endpoint with substituted URL"
         );
         // $BRIDGE_TOKEN should remain as a shell env var (NOT substituted).
