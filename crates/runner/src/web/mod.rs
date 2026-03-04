@@ -28,6 +28,10 @@ use tokio::net::TcpListener;
 use crate::load_runner_global_config;
 pub use state::WebState;
 
+const LOW_MEMORY_WARNING_THRESHOLD_MIB: u64 = 2048;
+#[cfg(any(test, target_os = "linux"))]
+const LOW_POWER_ARM_HINT_MAX_MEMORY_MIB: u64 = 4096;
+
 /// Errors that can occur when running the web server.
 #[derive(Debug, Error)]
 pub enum WebServerError {
@@ -157,14 +161,124 @@ struct MetaResponse {
     version: &'static str,
     config_path: String,
     workspace_root: String,
+    host_memory_mib: Option<u64>,
+    low_memory_warning: bool,
+    low_power_device_warning: bool,
 }
 
 async fn meta_handler(State(state): State<Arc<WebState>>) -> response::ApiResponse<MetaResponse> {
+    let host_memory_mib = detect_host_memory_mib();
+    let low_power_device_warning = detect_low_power_device_hint(host_memory_mib);
     response::ok_response(MetaResponse {
         version: crate::VERSION,
         config_path: state.config_path.display().to_string(),
         workspace_root: state.workspace_root.display().to_string(),
+        host_memory_mib,
+        low_memory_warning: host_memory_mib
+            .is_some_and(|memory_mib| memory_mib < LOW_MEMORY_WARNING_THRESHOLD_MIB),
+        low_power_device_warning,
     })
+}
+
+#[cfg(target_os = "linux")]
+fn detect_host_memory_mib() -> Option<u64> {
+    detect_linux_memory_mib()
+}
+
+#[cfg(target_os = "macos")]
+fn detect_host_memory_mib() -> Option<u64> {
+    detect_macos_memory_mib()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn detect_host_memory_mib() -> Option<u64> {
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn detect_linux_memory_mib() -> Option<u64> {
+    let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+    parse_linux_memtotal_mib(&meminfo)
+}
+
+#[cfg(any(test, target_os = "linux"))]
+fn parse_linux_memtotal_mib(meminfo: &str) -> Option<u64> {
+    let mem_total_kib = meminfo
+        .lines()
+        .find(|line| line.starts_with("MemTotal:"))?
+        .split_whitespace()
+        .nth(1)?
+        .parse::<u64>()
+        .ok()?;
+    Some(mem_total_kib / 1024)
+}
+
+#[cfg(target_os = "macos")]
+fn detect_macos_memory_mib() -> Option<u64> {
+    let output = std::process::Command::new("sysctl")
+        .args(["-n", "hw.memsize"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let total_bytes = String::from_utf8(output.stdout)
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()?;
+    Some(total_bytes / (1024 * 1024))
+}
+
+#[cfg(target_os = "linux")]
+fn detect_low_power_device_hint(host_memory_mib: Option<u64>) -> bool {
+    detect_linux_low_power_device_hint(host_memory_mib)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn detect_low_power_device_hint(_host_memory_mib: Option<u64>) -> bool {
+    false
+}
+
+#[cfg(target_os = "linux")]
+fn detect_linux_low_power_device_hint(host_memory_mib: Option<u64>) -> bool {
+    if detect_linux_raspberry_pi_marker() {
+        return true;
+    }
+    arm_low_power_heuristic(std::env::consts::ARCH, host_memory_mib)
+}
+
+#[cfg(target_os = "linux")]
+fn detect_linux_raspberry_pi_marker() -> bool {
+    for path in [
+        "/proc/device-tree/model",
+        "/sys/firmware/devicetree/base/model",
+    ] {
+        if let Ok(raw) = std::fs::read(path) {
+            let model = String::from_utf8_lossy(&raw);
+            if text_contains_raspberry_pi(&model) {
+                return true;
+            }
+        }
+    }
+
+    if let Ok(cpuinfo) = std::fs::read_to_string("/proc/cpuinfo") {
+        return text_contains_raspberry_pi(&cpuinfo);
+    }
+
+    false
+}
+
+#[cfg(any(test, target_os = "linux"))]
+fn text_contains_raspberry_pi(text: &str) -> bool {
+    text.to_ascii_lowercase().contains("raspberry pi")
+}
+
+#[cfg(any(test, target_os = "linux"))]
+fn arm_low_power_heuristic(arch: &str, host_memory_mib: Option<u64>) -> bool {
+    matches!(arch, "arm" | "aarch64")
+        && host_memory_mib.is_some_and(|memory| memory <= LOW_POWER_ARM_HINT_MAX_MEMORY_MIB)
 }
 
 async fn shutdown_signal(state: Arc<WebState>) {
@@ -242,7 +356,33 @@ auth_token = "test-token"
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["data"]["version"], crate::VERSION);
+        assert!(json["data"]["low_memory_warning"].is_boolean());
+        assert!(json["data"]["low_power_device_warning"].is_boolean());
+        assert!(
+            json["data"]["host_memory_mib"].is_null() || json["data"]["host_memory_mib"].is_u64()
+        );
         assert!(json["meta"]["request_id"].is_string());
+    }
+
+    #[test]
+    fn parse_linux_memtotal_mib_parses_value() {
+        let sample = "MemTotal:       2048000 kB\nMemFree:         123456 kB\n";
+        assert_eq!(parse_linux_memtotal_mib(sample), Some(2000));
+    }
+
+    #[test]
+    fn text_contains_raspberry_pi_detects_marker() {
+        assert!(text_contains_raspberry_pi(
+            "Model\t: Raspberry Pi 5 Model B"
+        ));
+        assert!(!text_contains_raspberry_pi("Model\t: Generic ARM SBC"));
+    }
+
+    #[test]
+    fn arm_low_power_heuristic_requires_arm_and_small_memory() {
+        assert!(arm_low_power_heuristic("aarch64", Some(2048)));
+        assert!(!arm_low_power_heuristic("x86_64", Some(2048)));
+        assert!(!arm_low_power_heuristic("aarch64", Some(8192)));
     }
 
     #[tokio::test]

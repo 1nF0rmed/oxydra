@@ -71,6 +71,16 @@
         <a href="#/setup">Open Setup Wizard</a>
       </div>
 
+      <div x-show="meta.low_memory_warning" class="banner banner-warning" x-cloak>
+        <strong>Low Memory Warning</strong>
+        <span x-text="meta.host_memory_mib ? `Detected host RAM: ${meta.host_memory_mib} MiB. Consider disabling Browser Access in User Config → Behavior on low-memory systems.` : 'Detected low host RAM. Consider disabling Browser Access in User Config → Behavior on low-memory systems.'"></span>
+      </div>
+
+      <div x-show="meta.low_power_device_warning && !meta.low_memory_warning" class="banner banner-warning" x-cloak>
+        <strong>Low-Power Device Hint</strong>
+        <span>Detected a likely low-power Linux ARM device (possibly Raspberry Pi). Consider disabling Browser Access in User Config → Behavior if performance or memory is tight.</span>
+      </div>
+
       <!-- Error boundary -->
       <div x-show="pageError" class="error-boundary" x-cloak>
         <p><strong>Something went wrong</strong></p>
