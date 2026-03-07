@@ -263,7 +263,7 @@
             </thead>
             <tbody>
               <template x-for="user in userList" :key="user.user_id">
-                <tr>
+                <tr :class="{ 'row-selected': selectedUserId === user.user_id }">
                   <td x-text="user.user_id"></td>
                   <td class="file-path" x-text="user.config_path"></td>
                   <td>
@@ -272,7 +272,7 @@
                       x-text="(findUserStatus(user.user_id) && findUserStatus(user.user_id).daemon_running) ? 'Running' : 'Stopped'"></span>
                   </td>
                   <td class="table-actions">
-                    <button class="btn btn-muted" @click="loadUserConfig(user.user_id)">Edit</button>
+                    <button class="btn" :class="selectedUserId === user.user_id ? 'btn-primary' : 'btn-muted'" @click="loadUserConfig(user.user_id)">Edit</button>
                     <button class="btn btn-danger" @click="deleteUser(user.user_id)">Delete</button>
                   </td>
                 </tr>
@@ -281,10 +281,21 @@
           </table>
 
           <div x-show="userEditor" class="user-editor-section">
-            <h3>User Config: <span x-text="selectedUserId"></span></h3>
+            <div class="user-editor-header">
+              <div class="user-editor-header-left">
+                <h3 style="margin:0">Editing: <strong x-text="selectedUserId"></strong></h3>
+                <span class="badge" :class="userEditor && userEditor.fileExists ? 'badge-success' : 'badge-muted'"
+                  x-text="userEditor && userEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
+              </div>
+              <div class="user-editor-header-actions">
+                <button class="btn btn-primary" :disabled="saving" @click="saveUserConfig()">
+                  <span x-show="saving" class="spinner"></span>
+                  Validate &amp; Save
+                </button>
+                <button class="btn btn-muted" @click="closeUserEditor()">Close</button>
+              </div>
+            </div>
             <div class="config-meta">
-              <span class="badge" :class="userEditor && userEditor.fileExists ? 'badge-success' : 'badge-muted'"
-                x-text="userEditor && userEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
               <span class="file-path" x-text="userEditor && userEditor.filePath"></span>
             </div>
 

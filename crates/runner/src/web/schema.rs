@@ -1029,7 +1029,7 @@ fn agent_tools_shell_section() -> SchemaSection {
         description: Some(
             "Global shell tool defaults and command execution security policy. The shell tool \
              is enabled by default outside process tier; use this section to disable it \
-             workspace-wide or customize the allowlist. User Config → Behavior Overrides can \
+             workspace-wide or customize the allowlist. User Config → Sandbox & Access can \
              still restrict shell access for individual users."
                 .into(),
         ),
@@ -1118,7 +1118,7 @@ fn agent_tools_browser_section() -> SchemaSection {
         description: Some(
             "Global browser automation defaults. The browser tool is enabled by default outside \
              process tier; use this section to disable it workspace-wide or point Pinchtab at \
-             an external Chrome CDP endpoint. User Config → Behavior Overrides can still \
+             an external Chrome CDP endpoint. User Config → Sandbox & Access can still \
              restrict browser access for individual users."
                 .into(),
         ),
@@ -1682,7 +1682,7 @@ fn user_behavior_section() -> SchemaSection {
                 ..fld("behavior.timezone", "Container Timezone", "select_dynamic")
             },
         ],
-        ..sec("behavior", "Behavior Overrides")
+        ..sec("behavior", "Sandbox & Access")
     }
 }
 

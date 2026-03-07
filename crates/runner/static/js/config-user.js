@@ -5,7 +5,7 @@
  *  - Mounts: optional text fields for shared/tmp/vault paths
  *  - Resources: optional number fields for vCPUs/memory/processes
  *  - Credential References: key-value map collection with secret masking
- *  - Behavior Overrides: optional dropdown for sandbox_tier, tri-state booleans
+ *  - Sandbox & Access: optional dropdown for sandbox_tier, tri-state booleans
  *  - Telegram Channel: optional section with sender bindings (array collection)
  *
  * Exposed as window.UserConfigEditor.

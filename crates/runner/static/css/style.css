@@ -434,6 +434,35 @@ select.text-input:focus {
 
 .user-editor-section {
   margin-top: 20px;
+  border-top: 2px solid var(--accent);
+  padding-top: 16px;
+}
+
+.user-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.user-editor-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.data-table .row-selected {
+  background: var(--card-bg);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* ── Loading / Skeleton ─────────────────────────────────────────── */

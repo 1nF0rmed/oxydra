@@ -481,12 +481,15 @@ function app() {
         }
       }
 
-      if (this.userList.length > 0) {
-        await this.loadUserConfig(this.userList[0].user_id);
-      } else {
-        this.selectedUserId = '';
-        this.userEditor = null;
-      }
+      // Don't auto-load first user — wait for explicit "Edit" click
+      this.selectedUserId = '';
+      this.userEditor = null;
+    },
+
+    closeUserEditor() {
+      this.selectedUserId = '';
+      this.userEditor = null;
+      this.userStructuredEditor = null;
     },
 
     async loadUsers() {
