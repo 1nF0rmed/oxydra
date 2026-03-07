@@ -343,7 +343,7 @@ Two backends implement the `ShellSession` trait:
 
 ## Browser Sidecar (Pinchtab)
 
-When `browser_enabled = true` in the user config (`[behavior]` section of `runner-user.toml`), the runner provisions a [Pinchtab](https://github.com/pinchtab/pinchtab) process alongside `shell-daemon` inside the same `shell-vm` container. Pinchtab is a headless Chrome automation server with a REST API. The agent drives the browser via `curl` commands through the existing `shell_exec` tool, guided by the Browser Automation skill injected into the system prompt (see Chapter 14).
+When the browser tool is enabled for the workspace in `agent.toml` (`[tools.browser] enabled = true`) and not restricted off for the current user in `runner-user.toml` (`[behavior] browser_enabled = false`), the runner provisions a [Pinchtab](https://github.com/pinchtab/pinchtab) process alongside `shell-daemon` inside the same `shell-vm` container. Pinchtab is a headless Chrome automation server with a REST API. The agent drives the browser via `curl` commands through the existing `shell_exec` tool, guided by the Browser Automation skill injected into the system prompt (see Chapter 14).
 
 Browser provisioning is skipped entirely in `Process` tier — the browser tool requires container isolation.
 

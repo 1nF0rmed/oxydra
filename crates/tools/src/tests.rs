@@ -14,8 +14,9 @@ use tokio::net::UnixListener;
 use tokio::time::sleep;
 use tools_macros::tool;
 use types::{
-    RunnerBootstrapEnvelope, RunnerResolvedMountPaths, RunnerResourceLimits, RunnerRuntimePolicy,
-    SandboxTier, SidecarEndpoint, SidecarTransport, StartupDegradedReasonCode,
+    BrowserToolConfig, RunnerBootstrapEnvelope, RunnerResolvedMountPaths, RunnerResourceLimits,
+    RunnerRuntimePolicy, SandboxTier, SidecarEndpoint, SidecarTransport, StartupDegradedReasonCode,
+    StartupStatusReport,
 };
 
 use super::*;
@@ -293,6 +294,55 @@ async fn bootstrap_runtime_tools_runs_bash_via_sidecar_session() {
     assert_eq!(output, "ws5-sidecar");
     assert!(availability.shell.is_ready());
     assert!(availability.browser.is_ready());
+
+    server_task.abort();
+    let _ = fs::remove_file(socket_path);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn bootstrap_runtime_tools_can_disable_shell_while_keeping_browser_ready() {
+    let socket_path = temp_socket_path("ws5-browser-only-sidecar");
+    let _ = fs::remove_file(&socket_path);
+    let listener =
+        UnixListener::bind(&socket_path).expect("test unix listener should bind socket path");
+    let server = ShellDaemonServer::default();
+    let server_task = tokio::spawn({
+        let server = server.clone();
+        async move { server.serve_unix_listener(listener).await }
+    });
+
+    let bootstrap = RunnerBootstrapEnvelope {
+        user_id: "alice".to_owned(),
+        sandbox_tier: SandboxTier::Container,
+        workspace_root: "/tmp/oxydra-test".to_owned(),
+        sidecar_endpoint: Some(SidecarEndpoint {
+            transport: SidecarTransport::Unix,
+            address: socket_path.to_string_lossy().into_owned(),
+        }),
+        runtime_policy: None,
+        startup_status: Some(StartupStatusReport {
+            sandbox_tier: SandboxTier::Container,
+            sidecar_available: true,
+            shell_available: false,
+            browser_available: true,
+            degraded_reasons: Vec::new(),
+        }),
+        channels: None,
+        browser_config: Some(BrowserToolConfig {
+            pinchtab_base_url: "http://127.0.0.1:9867".to_owned(),
+            bridge_token: Some("test-token".to_owned()),
+        }),
+    };
+    let RuntimeToolsBootstrap {
+        registry,
+        availability,
+    } = bootstrap_runtime_tools(Some(&bootstrap), None, None).await;
+
+    assert!(!availability.shell.is_ready());
+    assert!(availability.browser.is_ready());
+    assert!(registry.get(SHELL_EXEC_TOOL_NAME).is_none());
+    assert!(registry.get(BROWSER_TOOL_NAME).is_some());
 
     server_task.abort();
     let _ = fs::remove_file(socket_path);

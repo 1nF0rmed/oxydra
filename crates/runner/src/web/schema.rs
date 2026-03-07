@@ -419,6 +419,7 @@ fn build_agent_schema() -> ConfigSchema {
             // ── Group: Tools ─────────────────────────────────────────
             agent_tools_web_search_section(),
             agent_tools_shell_section(),
+            agent_tools_browser_section(),
             agent_tools_attachment_save_section(),
             // ── Group: Infrastructure ────────────────────────────────
             agent_reliability_section(),
@@ -942,9 +943,7 @@ fn agent_tools_web_search_section() -> SchemaSection {
         group: Some("tools".into()),
         group_label: Some("Tools".into()),
         group_description: Some(
-            "Tool-specific configuration. Tools are always available — these settings \
-             customize their behavior."
-                .into(),
+            "Tool-specific configuration, default availability, and integration settings.".into(),
         ),
         optional_section: true,
         toggle_on_label: Some("Custom".into()),
@@ -1028,17 +1027,22 @@ fn agent_tools_web_search_section() -> SchemaSection {
 fn agent_tools_shell_section() -> SchemaSection {
     SchemaSection {
         description: Some(
-            "Shell command execution security policy. The default config allows all \
-             commands (`*`) and operators; use this section to restrict or customize it. \
-             Note: shell and browser tool access can be enabled/disabled per-user under \
-             User Config → Behavior Overrides."
+            "Global shell tool defaults and command execution security policy. The shell tool \
+             is enabled by default outside process tier; use this section to disable it \
+             workspace-wide or customize the allowlist. User Config → Behavior Overrides can \
+             still restrict shell access for individual users."
                 .into(),
         ),
         group: Some("tools".into()),
         optional_section: true,
         toggle_on_label: Some("Custom".into()),
-        toggle_off_label: Some("Defaults".into()),
+        toggle_off_label: Some("Defaults (enabled)".into()),
         fields: vec![
+            SchemaField {
+                description: Some("Enable the shell tool for this workspace by default".into()),
+                default: Some(Value::Bool(true)),
+                ..fld("tools.shell.enabled", "Shell Enabled", "boolean")
+            },
             SchemaField {
                 description: Some(
                     "Additional commands/patterns to add to the allowlist. \
@@ -1089,8 +1093,57 @@ fn agent_tools_shell_section() -> SchemaSection {
                 nullable: true,
                 ..fld("tools.shell.env_keys", "Environment Variables", "tag_list")
             },
+            SchemaField {
+                description: Some(
+                    "Maximum number of seconds a single shell command may run before timing out."
+                        .into(),
+                ),
+                nullable: true,
+                default: Some(Value::Number(60.into())),
+                constraints: range(Some(1.0), None, None),
+                placeholder: Some("Default: 60".into()),
+                ..fld(
+                    "tools.shell.command_timeout_secs",
+                    "Command Timeout (seconds)",
+                    "number",
+                )
+            },
         ],
         ..sec("tools.shell", "Tools — Shell")
+    }
+}
+
+fn agent_tools_browser_section() -> SchemaSection {
+    SchemaSection {
+        description: Some(
+            "Global browser automation defaults. The browser tool is enabled by default outside \
+             process tier; use this section to disable it workspace-wide or point Pinchtab at \
+             an external Chrome CDP endpoint. User Config → Behavior Overrides can still \
+             restrict browser access for individual users."
+                .into(),
+        ),
+        group: Some("tools".into()),
+        optional_section: true,
+        toggle_on_label: Some("Custom".into()),
+        toggle_off_label: Some("Defaults (enabled)".into()),
+        fields: vec![
+            SchemaField {
+                description: Some("Enable the browser tool for this workspace by default".into()),
+                default: Some(Value::Bool(true)),
+                ..fld("tools.browser.enabled", "Browser Enabled", "boolean")
+            },
+            SchemaField {
+                description: Some(
+                    "Optional HTTP base URL for an external Chromium instance running with \
+                     remote debugging enabled."
+                        .into(),
+                ),
+                nullable: true,
+                placeholder: Some("e.g. http://127.0.0.1:9222".into()),
+                ..fld("tools.browser.cdp_url", "External CDP URL", "text")
+            },
+        ],
+        ..sec("tools.browser", "Tools — Browser")
     }
 }
 
@@ -1569,7 +1622,8 @@ fn user_behavior_section() -> SchemaSection {
     SchemaSection {
         description: Some(
             "Override default sandbox and tool access settings for this user. \
-             Leave unset to use the runner-level defaults."
+             Leave unset to use the runner and agent defaults. Shell/browser overrides here can \
+             only restrict access below the global settings in Agent Config → Tools."
                 .into(),
         ),
         group: Some("security".into()),
@@ -1590,21 +1644,25 @@ fn user_behavior_section() -> SchemaSection {
             },
             SchemaField {
                 description: Some(
-                    "Whether this user's agent can use the shell tool. \
-                     Leave unset to use the default."
+                    "Restrict whether this user's agent can use the shell tool. \
+                     Leave unset to use the global default."
                         .into(),
                 ),
                 nullable: true,
-                ..fld("behavior.shell_enabled", "Shell Access", "boolean")
+                ..fld("behavior.shell_enabled", "Shell Access Override", "boolean")
             },
             SchemaField {
                 description: Some(
-                    "Whether this user's agent can use browser tools. \
-                     Leave unset to use the default."
+                    "Restrict whether this user's agent can use browser tools. \
+                     Leave unset to use the global default."
                         .into(),
                 ),
                 nullable: true,
-                ..fld("behavior.browser_enabled", "Browser Access", "boolean")
+                ..fld(
+                    "behavior.browser_enabled",
+                    "Browser Access Override",
+                    "boolean",
+                )
             },
         ],
         ..sec("behavior", "Behavior Overrides")
@@ -1703,6 +1761,7 @@ mod tests {
             "catalog",
             "tools.web_search",
             "tools.shell",
+            "tools.browser",
             "tools.attachment_save",
             "scheduler",
             "gateway",
@@ -2022,11 +2081,16 @@ mod tests {
         assert!(paths.contains(&"tools.web_search.base_url".to_owned()));
         assert!(paths.contains(&"tools.web_search.egress_allowlist".to_owned()));
         // Tools — shell
+        assert!(paths.contains(&"tools.shell.enabled".to_owned()));
         assert!(paths.contains(&"tools.shell.allow".to_owned()));
         assert!(paths.contains(&"tools.shell.deny".to_owned()));
         assert!(paths.contains(&"tools.shell.replace_defaults".to_owned()));
         assert!(paths.contains(&"tools.shell.allow_operators".to_owned()));
         assert!(paths.contains(&"tools.shell.env_keys".to_owned()));
+        assert!(paths.contains(&"tools.shell.command_timeout_secs".to_owned()));
+        // Tools — browser
+        assert!(paths.contains(&"tools.browser.enabled".to_owned()));
+        assert!(paths.contains(&"tools.browser.cdp_url".to_owned()));
         // Tools — attachment_save
         assert!(paths.contains(&"tools.attachment_save.timeout_secs".to_owned()));
         // Scheduler
@@ -2108,6 +2172,13 @@ mod tests {
             .find(|s| s.id == "tools.shell")
             .unwrap();
         assert!(shell.optional_section);
+
+        let browser = schema
+            .sections
+            .iter()
+            .find(|s| s.id == "tools.browser")
+            .unwrap();
+        assert!(browser.optional_section);
 
         let attachment_save = schema
             .sections

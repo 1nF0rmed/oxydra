@@ -128,10 +128,12 @@ The default allowlist can be extended or replaced via `[tools.shell]` in `agent.
 
 ```toml
 [tools.shell]
+enabled = true                                        # Workspace-wide default for shell access
 allow = ["*"]                                         # Default (all commands)
 deny = ["rm"]                                       # Remove from defaults
 # replace_defaults = false                          # If true, only `allow` commands are permitted
 # allow_operators = true                            # Default: shell operators are allowed
+# command_timeout_secs = 60                         # Per-command timeout in seconds
 ```
 
 - **`allow`** — commands or glob patterns to add. Supports `*` as prefix/suffix: `cargo-*` matches `cargo-fmt`, `*test*` matches `pytest`.

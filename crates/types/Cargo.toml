@@ -12,6 +12,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "std", "env-filter"] }
+url = "2"
 # CancellationToken used by delegation APIs
 tokio-util = { version = "0.7", features = ["rt"] }
 # small utility for storing global executor

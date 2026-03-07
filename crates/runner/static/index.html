@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -17,6 +18,7 @@
   <script defer src="/js/app.js"></script>
   <script defer src="/js/vendor/alpine.min.js"></script>
 </head>
+
 <body x-data="app()">
   <div class="layout" :class="{ 'sidebar-open': sidebarOpen }">
     <!-- Mobile header with hamburger menu -->
@@ -39,11 +41,16 @@
         <span class="version" x-text="meta.version || ''"></span>
       </div>
       <ul class="nav-links">
-        <li><a href="#/" :class="{ active: currentPage === 'dashboard' }" @click="sidebarOpen = false">Dashboard</a></li>
-        <li><a href="#/config/agent" :class="{ active: currentPage === 'config-agent' }" @click="sidebarOpen = false">Agent Config</a></li>
-        <li><a href="#/config/runner" :class="{ active: currentPage === 'config-runner' }" @click="sidebarOpen = false">Runner Config</a></li>
-        <li><a href="#/config/users" :class="{ active: currentPage === 'config-users' }" @click="sidebarOpen = false">Users</a></li>
-        <li><a href="#/control" :class="{ active: currentPage === 'control' }" @click="sidebarOpen = false">Control</a></li>
+        <li><a href="#/" :class="{ active: currentPage === 'dashboard' }" @click="sidebarOpen = false">Dashboard</a>
+        </li>
+        <li><a href="#/config/agent" :class="{ active: currentPage === 'config-agent' }"
+            @click="sidebarOpen = false">Agent Config</a></li>
+        <li><a href="#/config/runner" :class="{ active: currentPage === 'config-runner' }"
+            @click="sidebarOpen = false">Runner Config</a></li>
+        <li><a href="#/config/users" :class="{ active: currentPage === 'config-users' }"
+            @click="sidebarOpen = false">Users</a></li>
+        <li><a href="#/control" :class="{ active: currentPage === 'control' }" @click="sidebarOpen = false">Control</a>
+        </li>
         <li><a href="#/logs" :class="{ active: currentPage === 'logs' }" @click="sidebarOpen = false">Logs</a></li>
       </ul>
       <div class="sidebar-footer">
@@ -73,12 +80,14 @@
 
       <div x-show="meta.low_memory_warning" class="banner banner-warning" x-cloak>
         <strong>Low Memory Warning</strong>
-        <span x-text="meta.host_memory_mib ? `Detected host RAM: ${meta.host_memory_mib} MiB. Consider disabling Browser Access in User Config → Behavior on low-memory systems.` : 'Detected low host RAM. Consider disabling Browser Access in User Config → Behavior on low-memory systems.'"></span>
+        <span
+          x-text="meta.host_memory_mib ? `Detected host RAM: ${meta.host_memory_mib} MiB. Consider disabling browser defaults in Agent Config → Tools → Browser on low-memory systems.` : 'Detected low host RAM. Consider disabling browser defaults in Agent Config → Tools → Browser on low-memory systems.'"></span>
       </div>
 
       <div x-show="meta.low_power_device_warning && !meta.low_memory_warning" class="banner banner-warning" x-cloak>
         <strong>Low-Power Device Hint</strong>
-        <span>Detected a likely low-power Linux ARM device (possibly Raspberry Pi). Consider disabling Browser Access in User Config → Behavior if performance or memory is tight.</span>
+        <span>Detected a likely low-power Linux ARM device (possibly Raspberry Pi). Consider disabling browser defaults
+          in Agent Config → Tools → Browser if performance or memory is tight.</span>
       </div>
 
       <!-- Error boundary -->
@@ -118,7 +127,7 @@
                 <div class="card-header">
                   <span class="user-name" x-text="user.user_id"></span>
                   <span class="badge" :class="user.daemon_running ? 'badge-success' : 'badge-muted'"
-                        x-text="user.daemon_running ? 'Running' : 'Stopped'"></span>
+                    x-text="user.daemon_running ? 'Running' : 'Stopped'"></span>
                 </div>
                 <div class="card-body">
                   <p><strong>Tier:</strong> <span x-text="user.sandbox_tier || 'n/a'"></span></p>
@@ -138,7 +147,7 @@
           <h2 style="margin:0">Agent Configuration</h2>
           <div x-show="agentEditor" class="page-header-actions">
             <span class="badge" :class="agentEditor && agentEditor.fileExists ? 'badge-success' : 'badge-muted'"
-                  x-text="agentEditor && agentEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
+              x-text="agentEditor && agentEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
             <button class="btn btn-primary" :disabled="saving" @click="saveAgentConfig()">
               <span x-show="saving" class="spinner"></span>
               Validate &amp; Save
@@ -168,7 +177,8 @@
               <span x-show="saving" class="spinner"></span>
               Validate &amp; Save
             </button>
-            <span class="text-muted" x-show="agentEditor && agentEditor.backupPath">Backup: <span x-text="agentEditor && agentEditor.backupPath"></span></span>
+            <span class="text-muted" x-show="agentEditor && agentEditor.backupPath">Backup: <span
+                x-text="agentEditor && agentEditor.backupPath"></span></span>
           </div>
         </div>
       </div>
@@ -189,7 +199,7 @@
         <div x-show="runnerEditor">
           <div class="config-meta">
             <span class="badge" :class="runnerEditor && runnerEditor.fileExists ? 'badge-success' : 'badge-muted'"
-                  x-text="runnerEditor && runnerEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
+              x-text="runnerEditor && runnerEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
             <span class="file-path" x-text="runnerEditor && runnerEditor.filePath"></span>
           </div>
 
@@ -201,7 +211,8 @@
               <span x-show="saving" class="spinner"></span>
               Validate &amp; Save
             </button>
-            <span class="text-muted" x-show="runnerEditor && runnerEditor.backupPath">Backup: <span x-text="runnerEditor && runnerEditor.backupPath"></span></span>
+            <span class="text-muted" x-show="runnerEditor && runnerEditor.backupPath">Backup: <span
+                x-text="runnerEditor && runnerEditor.backupPath"></span></span>
           </div>
         </div>
       </div>
@@ -224,14 +235,12 @@
               <label>
                 <span>User ID</span>
                 <input type="text" class="text-input" :value="newUser.user_id"
-                       @input="newUser.user_id = $event.target.value"
-                       @keydown.enter="addUser()">
+                  @input="newUser.user_id = $event.target.value" @keydown.enter="addUser()">
               </label>
               <label>
                 <span>Config Path</span>
                 <input type="text" class="text-input" :value="newUser.config_path"
-                       @input="newUser.config_path = $event.target.value"
-                       @keydown.enter="addUser()">
+                  @input="newUser.config_path = $event.target.value" @keydown.enter="addUser()">
               </label>
               <div class="actions-row">
                 <button class="btn btn-primary" :disabled="saving" @click="addUser()">
@@ -258,8 +267,9 @@
                   <td x-text="user.user_id"></td>
                   <td class="file-path" x-text="user.config_path"></td>
                   <td>
-                    <span class="badge" :class="(findUserStatus(user.user_id) && findUserStatus(user.user_id).daemon_running) ? 'badge-success' : 'badge-muted'"
-                          x-text="(findUserStatus(user.user_id) && findUserStatus(user.user_id).daemon_running) ? 'Running' : 'Stopped'"></span>
+                    <span class="badge"
+                      :class="(findUserStatus(user.user_id) && findUserStatus(user.user_id).daemon_running) ? 'badge-success' : 'badge-muted'"
+                      x-text="(findUserStatus(user.user_id) && findUserStatus(user.user_id).daemon_running) ? 'Running' : 'Stopped'"></span>
                   </td>
                   <td class="table-actions">
                     <button class="btn btn-muted" @click="loadUserConfig(user.user_id)">Edit</button>
@@ -274,7 +284,7 @@
             <h3>User Config: <span x-text="selectedUserId"></span></h3>
             <div class="config-meta">
               <span class="badge" :class="userEditor && userEditor.fileExists ? 'badge-success' : 'badge-muted'"
-                    x-text="userEditor && userEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
+                x-text="userEditor && userEditor.fileExists ? 'File exists' : 'File not found (defaults)'"></span>
               <span class="file-path" x-text="userEditor && userEditor.filePath"></span>
             </div>
 
@@ -286,7 +296,8 @@
                 <span x-show="saving" class="spinner"></span>
                 Validate &amp; Save
               </button>
-              <span class="text-muted" x-show="userEditor && userEditor.backupPath">Backup: <span x-text="userEditor && userEditor.backupPath"></span></span>
+              <span class="text-muted" x-show="userEditor && userEditor.backupPath">Backup: <span
+                  x-text="userEditor && userEditor.backupPath"></span></span>
             </div>
           </div>
         </div>
@@ -307,7 +318,8 @@
             </label>
             <label>
               <span>Role</span>
-              <select class="text-input" :value="logsState.role" @change="logsState.role = $event.target.value; refreshLogs()">
+              <select class="text-input" :value="logsState.role"
+                @change="logsState.role = $event.target.value; refreshLogs()">
                 <option value="runtime">runtime</option>
                 <option value="sidecar">sidecar</option>
                 <option value="all">all</option>
@@ -315,7 +327,8 @@
             </label>
             <label>
               <span>Stream</span>
-              <select class="text-input" :value="logsState.stream" @change="logsState.stream = $event.target.value; refreshLogs()">
+              <select class="text-input" :value="logsState.stream"
+                @change="logsState.stream = $event.target.value; refreshLogs()">
                 <option value="stdout">stdout</option>
                 <option value="stderr">stderr</option>
                 <option value="both">both</option>
@@ -323,12 +336,12 @@
             </label>
             <label>
               <span>Tail</span>
-              <input type="number" class="text-input" min="1" max="1000"
-                     :value="logsState.tail"
-                     @change="logsState.tail = Number($event.target.value) || 200; refreshLogs()">
+              <input type="number" class="text-input" min="1" max="1000" :value="logsState.tail"
+                @change="logsState.tail = Number($event.target.value) || 200; refreshLogs()">
             </label>
             <label class="switch-row">
-              <input type="checkbox" :checked="logsState.autoRefresh" @change="logsState.autoRefresh = $event.target.checked">
+              <input type="checkbox" :checked="logsState.autoRefresh"
+                @change="logsState.autoRefresh = $event.target.checked">
               <span>Auto-refresh</span>
             </label>
             <div class="actions-row">
@@ -336,19 +349,23 @@
                 <span x-show="logsState.loading" class="spinner"></span>
                 Refresh
               </button>
-              <button class="btn btn-primary" :disabled="logsState.entries.length === 0" @click="copyLogsToClipboard()">Copy to Clipboard</button>
+              <button class="btn btn-primary" :disabled="logsState.entries.length === 0"
+                @click="copyLogsToClipboard()">Copy to Clipboard</button>
             </div>
           </div>
         </div>
 
         <div class="logs-meta">
-          <span class="badge" :class="logsState.loading ? 'badge-muted' : 'badge-success'" x-text="logsState.loading ? 'Loading' : 'Ready'"></span>
+          <span class="badge" :class="logsState.loading ? 'badge-muted' : 'badge-success'"
+            x-text="logsState.loading ? 'Loading' : 'Ready'"></span>
           <span class="text-muted" x-show="logsState.truncated">Output truncated by server limits.</span>
         </div>
 
         <div class="logs-output" x-show="logsState.entries.length > 0" x-ref="logsOutput">
-          <template x-for="(entry, index) in logsState.entries" :key="`${entry.timestamp || 'na'}-${entry.role}-${entry.stream}-${index}`">
-            <div class="log-line" :class="`log-${entry._level || logEntryLevel(entry)}`" x-text="entry._text || logEntryText(entry)"></div>
+          <template x-for="(entry, index) in logsState.entries"
+            :key="`${entry.timestamp || 'na'}-${entry.role}-${entry.stream}-${index}`">
+            <div class="log-line" :class="`log-${entry._level || logEntryLevel(entry)}`"
+              x-text="entry._text || logEntryText(entry)"></div>
           </template>
         </div>
 
@@ -390,21 +407,21 @@
                   <td x-text="user.user_id"></td>
                   <td>
                     <span class="badge" :class="isUserRunning(user.user_id) ? 'badge-success' : 'badge-muted'"
-                          x-text="isUserRunning(user.user_id) ? 'Running' : 'Stopped'"></span>
+                      x-text="isUserRunning(user.user_id) ? 'Running' : 'Stopped'"></span>
                   </td>
                   <td class="table-actions">
                     <button class="btn btn-primary"
-                            :disabled="controlUserBusy(user.user_id) || isUserRunning(user.user_id)"
-                            @click="runControlAction(user.user_id, 'start')">
+                      :disabled="controlUserBusy(user.user_id) || isUserRunning(user.user_id)"
+                      @click="runControlAction(user.user_id, 'start')">
                       <span x-show="controlUserBusy(user.user_id)" class="spinner"></span>
                       Start
                     </button>
                     <button class="btn btn-muted"
-                            :disabled="controlUserBusy(user.user_id) || !isUserRunning(user.user_id)"
-                            @click="runControlAction(user.user_id, 'stop')">Stop</button>
+                      :disabled="controlUserBusy(user.user_id) || !isUserRunning(user.user_id)"
+                      @click="runControlAction(user.user_id, 'stop')">Stop</button>
                     <button class="btn btn-muted"
-                            :disabled="controlUserBusy(user.user_id) || !isUserRunning(user.user_id)"
-                            @click="runControlAction(user.user_id, 'restart')">Restart</button>
+                      :disabled="controlUserBusy(user.user_id) || !isUserRunning(user.user_id)"
+                      @click="runControlAction(user.user_id, 'restart')">Restart</button>
                   </td>
                 </tr>
               </template>
@@ -420,14 +437,14 @@
         <div class="wizard-card">
           <!-- Step progress bar -->
           <div class="wizard-stepper" role="list">
-            <template x-for="n in [1,2,3,4,5]" :key="n">
+            <template x-for="n in [1,2,3,4,5,6]" :key="n">
               <div class="wizard-step-pip" role="listitem"
-                   :class="{ 'pip-done': n < onboardingWizard.step, 'pip-active': n === onboardingWizard.step, 'pip-pending': n > onboardingWizard.step }">
+                :class="{ 'pip-done': n < onboardingWizard.step, 'pip-active': n === onboardingWizard.step, 'pip-pending': n > onboardingWizard.step }">
                 <div class="pip-circle">
                   <span x-show="n < onboardingWizard.step">✓</span>
                   <span x-show="n >= onboardingWizard.step" x-text="n"></span>
                 </div>
-                <span class="pip-label" x-text="['Welcome','Runner','User','Provider','Review'][n-1]"></span>
+                <span class="pip-label" x-text="['Welcome','Runner','User','Provider','Tools','Review'][n-1]"></span>
               </div>
             </template>
           </div>
@@ -436,11 +453,14 @@
             <!-- Step 1: Welcome -->
             <div x-show="onboardingWizard.step === 1">
               <h3 class="wizard-step-title">Welcome to Oxydra</h3>
-              <p class="wizard-step-desc">This wizard will set up the minimum configuration needed to start using Oxydra. It takes about 2 minutes.</p>
+              <p class="wizard-step-desc">This wizard will set up the core configuration needed to start using Oxydra,
+                then let you tune tool defaults and optional channels.</p>
               <div class="wizard-checklist">
                 <div class="wizard-check-item">📁 <span>Configure the workspace directory</span></div>
                 <div class="wizard-check-item">👤 <span>Create your first user</span></div>
                 <div class="wizard-check-item">🔑 <span>Connect an AI provider</span></div>
+                <div class="wizard-check-item">🧰 <span>Choose shell/browser defaults</span></div>
+                <div class="wizard-check-item">📣 <span>Optionally configure Telegram</span></div>
                 <div class="wizard-check-item">✅ <span>Ready to use</span></div>
               </div>
             </div>
@@ -448,32 +468,31 @@
             <!-- Step 2: Runner Configuration -->
             <div x-show="onboardingWizard.step === 2">
               <h3 class="wizard-step-title">Runner Configuration</h3>
-              <p class="wizard-step-desc">Set the directory where Oxydra stores agent workspaces and session data. This can be an absolute path or a relative path from the config directory.</p>
+              <p class="wizard-step-desc">Set the directory where Oxydra stores agent workspaces and session data. This
+                can be an absolute path or a relative path from the config directory.</p>
               <label class="wizard-field-label">
                 <span>Workspace Root</span>
                 <input type="text" class="text-input" :value="onboardingWizard.runnerWorkspaceRoot"
-                       @input="onboardingWizard.runnerWorkspaceRoot = $event.target.value"
-                       @keydown.enter="onboardingNextStep()"
-                       placeholder="workspaces">
+                  @input="onboardingWizard.runnerWorkspaceRoot = $event.target.value"
+                  @keydown.enter="onboardingNextStep()" placeholder="workspaces">
               </label>
             </div>
 
             <!-- Step 3: Register First User -->
             <div x-show="onboardingWizard.step === 3">
               <h3 class="wizard-step-title">Register First User</h3>
-              <p class="wizard-step-desc">Create your first user account. The User ID is used to identify the user in the system and start/stop their daemon.</p>
+              <p class="wizard-step-desc">Create your first user account. The User ID is used to identify the user in
+                the system and start/stop their daemon.</p>
               <label class="wizard-field-label">
                 <span>User ID</span>
                 <input type="text" class="text-input" :value="onboardingWizard.userId"
-                       @input="onboardingWizard.userId = $event.target.value"
-                       @keydown.enter="onboardingNextStep()"
-                       placeholder="default">
+                  @input="onboardingWizard.userId = $event.target.value" @keydown.enter="onboardingNextStep()"
+                  placeholder="default">
               </label>
               <label class="wizard-field-label">
                 <span>User Config Path <span class="wizard-hint">(relative to runner config directory)</span></span>
                 <input type="text" class="text-input" :value="onboardingWizard.userConfigPath"
-                       @input="onboardingWizard.userConfigPath = $event.target.value"
-                       @keydown.enter="onboardingNextStep()">
+                  @input="onboardingWizard.userConfigPath = $event.target.value" @keydown.enter="onboardingNextStep()">
               </label>
               <button class="btn btn-muted btn-sm" @click="onboardingAutofillUserPath()">Auto-fill from User ID</button>
             </div>
@@ -481,11 +500,13 @@
             <!-- Step 4: Provider Setup -->
             <div x-show="onboardingWizard.step === 4">
               <h3 class="wizard-step-title">Provider Setup</h3>
-              <p class="wizard-step-desc">Connect an AI provider. The <strong>Provider Name</strong> is your custom identifier (e.g. "google-aistudio"). The <strong>Provider Type</strong> is the API protocol. Selecting a type auto-fills the other fields.</p>
+              <p class="wizard-step-desc">Connect an AI provider. The <strong>Provider Name</strong> is your custom
+                identifier (e.g. "google-aistudio"). The <strong>Provider Type</strong> is the API protocol. Selecting a
+                type auto-fills the other fields.</p>
               <label class="wizard-field-label">
                 <span>Provider Type</span>
                 <select class="text-input" :value="onboardingWizard.providerType"
-                        @change="onboardingProviderTypeChange($event.target.value)">
+                  @change="onboardingProviderTypeChange($event.target.value)">
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic</option>
                   <option value="gemini">Gemini (Google AI Studio)</option>
@@ -495,32 +516,31 @@
               <label class="wizard-field-label">
                 <span>Provider Name <span class="wizard-hint">(your custom identifier)</span></span>
                 <input type="text" class="text-input" :value="onboardingWizard.providerName"
-                       @input="onboardingWizard.providerName = $event.target.value"
-                       placeholder="e.g. openai, google-aistudio">
+                  @input="onboardingWizard.providerName = $event.target.value"
+                  placeholder="e.g. openai, google-aistudio">
               </label>
               <div class="wizard-field-label">
                 <div class="wizard-model-label-row">
                   <span>Default Model</span>
-                  <button type="button" class="btn btn-muted btn-sm"
-                          @click="onboardingRefreshCatalog()"
-                          :disabled="onboardingWizard.catalogRefreshing || onboardingWizard.busy">
+                  <button type="button" class="btn btn-muted btn-sm" @click="onboardingRefreshCatalog()"
+                    :disabled="onboardingWizard.catalogRefreshing || onboardingWizard.busy">
                     <span x-show="!onboardingWizard.catalogRefreshing">↻ Refresh catalog</span>
                     <span x-show="onboardingWizard.catalogRefreshing">Loading…</span>
                   </button>
                 </div>
                 <!-- Catalog dropdown when models are available -->
                 <select class="text-input"
-                        x-show="onboardingWizard.catalogModels.length > 0 && !onboardingWizard.customModelMode"
-                        x-effect="onboardingBuildModelSelect($el)"
-                        @change="onboardingModelSelectChange($event.target.value)"></select>
+                  x-show="onboardingWizard.catalogModels.length > 0 && !onboardingWizard.customModelMode"
+                  x-effect="onboardingBuildModelSelect($el)"
+                  @change="onboardingModelSelectChange($event.target.value)"></select>
                 <!-- Text input: fallback or custom mode -->
                 <div x-show="onboardingWizard.catalogModels.length === 0 || onboardingWizard.customModelMode">
                   <input type="text" class="text-input" :value="onboardingWizard.defaultModel"
-                         @input="onboardingWizard.defaultModel = $event.target.value"
-                         placeholder="e.g. gpt-4o-mini, gemini-2.0-flash">
+                    @input="onboardingWizard.defaultModel = $event.target.value"
+                    placeholder="e.g. gpt-4o-mini, gemini-2.0-flash">
                   <button type="button" class="btn btn-muted btn-sm wizard-back-model-btn"
-                          x-show="onboardingWizard.customModelMode && onboardingWizard.catalogModels.length > 0"
-                          @click="onboardingWizard.customModelMode = false; onboardingWizard.defaultModel = (window.OxydraOnboarding?.getProviderDefaults(onboardingWizard.providerType) || {}).model || ''">
+                    x-show="onboardingWizard.customModelMode && onboardingWizard.catalogModels.length > 0"
+                    @click="onboardingWizard.customModelMode = false; onboardingWizard.defaultModel = (window.OxydraOnboarding?.getProviderDefaults(onboardingWizard.providerType) || {}).model || ''">
                     ← Back to list
                   </button>
                 </div>
@@ -528,19 +548,67 @@
               <label class="wizard-field-label">
                 <span>API Key Env Var <span class="wizard-hint">(environment variable that holds your key)</span></span>
                 <input type="text" class="text-input" :value="onboardingWizard.providerApiKeyEnv"
-                       @input="onboardingWizard.providerApiKeyEnv = $event.target.value"
-                       @keydown.enter="onboardingNextStep()">
+                  @input="onboardingWizard.providerApiKeyEnv = $event.target.value"
+                  @keydown.enter="onboardingNextStep()">
               </label>
               <label class="wizard-field-label">
                 <span>API Key <span class="wizard-hint">(optional: enter directly instead of via env var)</span></span>
                 <input type="password" class="text-input" :value="onboardingWizard.providerApiKey"
-                       @input="onboardingWizard.providerApiKey = $event.target.value">
+                  @input="onboardingWizard.providerApiKey = $event.target.value">
               </label>
-              <p class="text-success wizard-env-ok" x-show="onboardingWizard.providerEnvResolved">✓ Provider credentials appear to be resolved via environment variable.</p>
+              <p class="text-success wizard-env-ok" x-show="onboardingWizard.providerEnvResolved">✓ Provider credentials
+                appear to be resolved via environment variable.</p>
             </div>
 
-            <!-- Step 5: Review -->
+            <!-- Step 5: Tools & Channels -->
             <div x-show="onboardingWizard.step === 5">
+              <h3 class="wizard-step-title">Tools &amp; Channels</h3>
+              <p class="wizard-step-desc">Set workspace-wide shell/browser defaults in <code>agent.toml</code>, then
+                optionally configure Telegram for your first user.</p>
+
+              <label class="switch-row">
+                <input type="checkbox" :checked="onboardingWizard.shellEnabled"
+                  @change="onboardingWizard.shellEnabled = $event.target.checked">
+                <span>Enable shell tool by default</span>
+              </label>
+              <label class="switch-row">
+                <input type="checkbox" :checked="onboardingWizard.browserEnabled"
+                  @change="onboardingWizard.browserEnabled = $event.target.checked">
+                <span>Enable browser tool by default</span>
+              </label>
+              <label class="wizard-field-label"
+                x-show="onboardingWizard.browserEnabled || onboardingWizard.browserCdpUrl">
+                <span>External Browser CDP URL <span class="wizard-hint">(optional: reuse an external Chromium
+                    instance)</span></span>
+                <input type="text" class="text-input" :value="onboardingWizard.browserCdpUrl"
+                  @input="onboardingWizard.browserCdpUrl = $event.target.value"
+                  placeholder="e.g. http://127.0.0.1:9222">
+              </label>
+
+              <hr>
+              <label class="switch-row">
+                <input type="checkbox" :checked="onboardingWizard.telegramEnabled"
+                  @change="onboardingWizard.telegramEnabled = $event.target.checked">
+                <span>Configure Telegram for this user</span>
+              </label>
+              <div x-show="onboardingWizard.telegramEnabled">
+                <label class="wizard-field-label">
+                  <span>Telegram Bot Token Env Var</span>
+                  <input type="text" class="text-input" :value="onboardingWizard.telegramBotTokenEnv"
+                    @input="onboardingWizard.telegramBotTokenEnv = $event.target.value"
+                    placeholder="e.g. TELEGRAM_BOT_TOKEN">
+                </label>
+                <label class="wizard-field-label">
+                  <span>Authorized Telegram Sender ID <span class="wizard-hint">(you can add more later in User
+                      Config)</span></span>
+                  <input type="text" class="text-input" :value="onboardingWizard.telegramSenderId"
+                    @input="onboardingWizard.telegramSenderId = $event.target.value" placeholder="e.g. 12345678">
+                </label>
+              </div>
+            </div>
+
+            <!-- Step 6: Review -->
+            <div x-show="onboardingWizard.step === 6">
               <h3 class="wizard-step-title">Review &amp; Complete</h3>
               <p class="wizard-step-desc">Your setup is saved. Here's a summary of what was configured:</p>
               <ul class="summary-list">
@@ -550,9 +618,11 @@
               </ul>
               <div x-show="onboardingWizard.done" class="wizard-done-box">
                 <p class="wizard-done-title">🎉 Setup complete!</p>
-                <p class="wizard-done-desc">You can now go to Agent Config to fine-tune your model selection, or use the Control panel to start your agent daemon.</p>
+                <p class="wizard-done-desc">You can now go to Agent Config to fine-tune your model selection, or use the
+                  Control panel to start your agent daemon.</p>
                 <div class="actions-row">
-                  <a href="#/config/agent" class="btn btn-primary" @click="currentPage = 'config-agent'">Open Agent Config</a>
+                  <a href="#/config/agent" class="btn btn-primary" @click="currentPage = 'config-agent'">Open Agent
+                    Config</a>
                   <a href="#/control" class="btn btn-muted" @click="currentPage = 'control'">Go to Control Panel</a>
                 </div>
               </div>
@@ -563,14 +633,12 @@
 
           <div class="wizard-actions">
             <button class="btn btn-muted"
-                    :disabled="onboardingWizard.busy || onboardingWizard.step === 1 || onboardingWizard.done"
-                    @click="onboardingPreviousStep()">Back</button>
-            <button class="btn btn-primary"
-                    :disabled="onboardingWizard.busy || onboardingWizard.done"
-                    @click="onboardingNextStep()"
-                    x-show="!onboardingWizard.done">
+              :disabled="onboardingWizard.busy || onboardingWizard.step === 1 || onboardingWizard.done"
+              @click="onboardingPreviousStep()">Back</button>
+            <button class="btn btn-primary" :disabled="onboardingWizard.busy || onboardingWizard.done"
+              @click="onboardingNextStep()" x-show="!onboardingWizard.done">
               <span x-show="onboardingWizard.busy" class="spinner"></span>
-              <span x-text="onboardingWizard.step === 5 ? 'Finish' : 'Next'"></span>
+              <span x-text="onboardingWizard.step === 6 ? 'Finish' : 'Next'"></span>
             </button>
           </div>
         </div>
@@ -578,4 +646,5 @@
     </main>
   </div>
 </body>
+
 </html>

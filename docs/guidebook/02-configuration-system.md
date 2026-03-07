@@ -568,12 +568,19 @@ provider_type = "anthropic"
 # --- Shell command allowlist ---
 
 # [tools.shell]
+# enabled = true
 # allow = ["*"]
 # deny = ["rm"]
 # replace_defaults = false
 # allow_operators = true
 # env_keys = ["NPM_TOKEN", "GH_TOKEN"]  # Forward these env vars into the shell container
 # command_timeout_secs = 60             # Max seconds per command (default: 60)
+
+# --- Browser automation ---
+
+# [tools.browser]
+# enabled = true
+# cdp_url = "http://127.0.0.1:9222"     # Optional external Chromium CDP endpoint
 
 # --- Scheduler ---
 # Enable and configure the scheduler for automated recurring/one-off tasks.

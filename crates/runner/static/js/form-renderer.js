@@ -273,7 +273,8 @@ window.FormRenderer = (function () {
     var input = el('input');
     input.type = 'checkbox';
     input.id = fieldId;
-    input.checked = Boolean(value);
+    var defaultValue = schema.default === undefined ? false : Boolean(schema.default);
+    input.checked = value == null ? defaultValue : Boolean(value);
     setAria(input, descId);
 
     var slider = el('span', 'fr-toggle-slider');
@@ -293,7 +294,7 @@ window.FormRenderer = (function () {
       element: wrapper,
       getValue: function () { return input.checked; },
       setValue: function (v) {
-        input.checked = Boolean(v);
+        input.checked = v == null ? defaultValue : Boolean(v);
         text.textContent = input.checked ? 'Enabled' : 'Disabled';
       },
     };

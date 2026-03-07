@@ -13,9 +13,9 @@ use std::os::unix::fs::PermissionsExt;
 
 use tokio_tungstenite::tungstenite::{Message as WsMessage, accept};
 use types::{
-    DEFAULT_RUNNER_CONFIG_VERSION, LogFormat, LogRole, LogStream, RunnerBootstrapEnvelope,
-    RunnerControl, RunnerControlErrorCode, RunnerControlLogsRequest, RunnerControlResponse,
-    StartupDegradedReason, StartupDegradedReasonCode,
+    DEFAULT_RUNNER_CONFIG_VERSION, LogFormat, LogRole, LogStream, RunnerBehaviorOverrides,
+    RunnerBootstrapEnvelope, RunnerControl, RunnerControlErrorCode, RunnerControlLogsRequest,
+    RunnerControlResponse, StartupDegradedReason, StartupDegradedReasonCode,
 };
 
 use super::*;
@@ -148,6 +148,28 @@ fn global_and_user_configs_load_with_validation() {
 }
 
 #[test]
+fn legacy_browser_cdp_url_in_user_behavior_is_rejected() {
+    let root = temp_dir("legacy-browser-cdp-url");
+    let user_path = root.join("users/alice.toml");
+    write_user_config(
+        &user_path,
+        r#"
+[behavior]
+browser_cdp_url = "http://127.0.0.1:9222"
+"#,
+    );
+
+    let result = load_runner_user_config(&user_path);
+    assert!(matches!(
+        result,
+        Err(RunnerError::ParseUserConfig { source, .. })
+            if source.to_string().contains("unknown field `browser_cdp_url`")
+    ));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn loading_legacy_runner_global_config_auto_migrates_and_creates_backup() {
     let root = temp_dir("global-config-migration");
     let global_path = write_legacy_runner_config_fixture(&root, "container");
@@ -267,6 +289,34 @@ fn sandbox_tier_resolution_honors_insecure_override() {
         resolve_sandbox_tier(&global, &user, true),
         SandboxTier::Process
     );
+}
+
+#[test]
+fn requested_capabilities_apply_agent_defaults_before_user_overrides() {
+    let tools = types::ToolsConfig {
+        shell: Some(types::ShellConfig {
+            enabled: Some(false),
+            ..types::ShellConfig::default()
+        }),
+        browser: Some(types::BrowserConfig {
+            enabled: Some(true),
+            cdp_url: None,
+        }),
+        ..types::ToolsConfig::default()
+    };
+    let user = RunnerUserConfig {
+        behavior: RunnerBehaviorOverrides {
+            shell_enabled: Some(true),
+            browser_enabled: Some(false),
+            ..RunnerBehaviorOverrides::default()
+        },
+        ..RunnerUserConfig::default()
+    };
+
+    let capabilities =
+        resolve_requested_capabilities(SandboxTier::Container, &tools, &user.behavior);
+    assert!(!capabilities.shell);
+    assert!(!capabilities.browser);
 }
 
 #[test]
@@ -2219,7 +2269,7 @@ fn generate_bridge_token_produces_unique_values() {
 
 #[test]
 fn build_browser_env_returns_expected_vars() {
-    let (env_vars, pinchtab_url) = super::build_browser_env(9867, "test-token-abc");
+    let (env_vars, pinchtab_url) = super::build_browser_env(9867, "test-token-abc", None);
     assert_eq!(pinchtab_url, "http://127.0.0.1:9867");
     assert!(env_vars.contains(&"BROWSER_ENABLED=true".to_owned()));
     assert!(env_vars.contains(&"BRIDGE_PORT=9867".to_owned()));
@@ -2274,6 +2324,7 @@ fn apply_browser_shell_overlay_does_not_duplicate_existing_commands() {
 #[test]
 fn apply_browser_shell_overlay_preserves_existing_deny_and_replace_defaults() {
     let mut config = types::ShellConfig {
+        enabled: None,
         allow: Some(vec!["npm".to_owned()]),
         deny: Some(vec!["rm".to_owned()]),
         replace_defaults: Some(true),

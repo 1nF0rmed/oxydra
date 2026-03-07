@@ -4,6 +4,7 @@
     'Runner Configuration',
     'Register First User',
     'Provider Setup',
+    'Tools & Channels',
     'Review',
   ];
 
@@ -58,6 +59,13 @@
       catalogModels: [],
       catalogRefreshing: false,
       customModelMode: false,
+      shellEnabled: true,
+      browserEnabled: true,
+      browserCdpUrl: '',
+      telegramEnabled: false,
+      telegramBotTokenEnv: 'TELEGRAM_BOT_TOKEN',
+      telegramSenderId: '',
+      userAlreadyExists: false,
       busy: false,
       error: '',
       done: false,

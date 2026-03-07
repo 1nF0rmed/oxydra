@@ -220,6 +220,13 @@ function onboardingFactory() {
     catalogModels: [],
     catalogRefreshing: false,
     customModelMode: false,
+    shellEnabled: true,
+    browserEnabled: true,
+    browserCdpUrl: '',
+    telegramEnabled: false,
+    telegramBotTokenEnv: 'TELEGRAM_BOT_TOKEN',
+    telegramSenderId: '',
+    userAlreadyExists: false,
     busy: false,
     error: '',
     done: false,
@@ -366,7 +373,7 @@ function app() {
         } else if (this.currentPage === 'logs') {
           await this.loadLogsPage();
         } else if (this.currentPage === 'setup') {
-          this.seedOnboardingWizard();
+          await this.seedOnboardingWizard();
         }
       } catch (error) {
         this.pageError = error.message || 'An unexpected error occurred.';
@@ -1065,15 +1072,78 @@ function app() {
       return trimmed ? `users/${trimmed}.toml` : 'users/default.toml';
     },
 
-    seedOnboardingWizard() {
-      if (this.runnerEditor) {
-        const workspaceField = this.runnerEditor.fields.find((field) => field.path === 'workspace_root');
-        if (workspaceField) {
-          this.onboardingWizard.runnerWorkspaceRoot = workspaceField.value;
+    async seedOnboardingWizard() {
+      try {
+        const [runnerResponse, agentResponse, usersResponse] = await Promise.all([
+          api('/config/runner'),
+          api('/config/agent'),
+          api('/config/users'),
+        ]);
+        const runnerConfig = runnerResponse.config || {};
+        const agentConfig = agentResponse.config || {};
+        const users = usersResponse.users || [];
+        const selection = agentConfig.selection || {};
+        const providerRegistry = (agentConfig.providers && agentConfig.providers.registry) || {};
+        const activeProviderName = selection.provider || this.onboardingWizard.providerName;
+        const activeProvider = providerRegistry[activeProviderName] || null;
+        const shellConfig = (agentConfig.tools && agentConfig.tools.shell) || {};
+        const browserConfig = (agentConfig.tools && agentConfig.tools.browser) || {};
+
+        if (runnerConfig.workspace_root) {
+          this.onboardingWizard.runnerWorkspaceRoot = runnerConfig.workspace_root;
         }
-      }
-      if (!this.onboardingWizard.userConfigPath.trim()) {
-        this.onboardingWizard.userConfigPath = this.defaultUserConfigPath(this.onboardingWizard.userId);
+        if (selection.provider) {
+          this.onboardingWizard.providerName = selection.provider;
+        }
+        if (selection.model) {
+          this.onboardingWizard.defaultModel = selection.model;
+        }
+        if (activeProvider && activeProvider.provider_type) {
+          this.onboardingWizard.providerType = activeProvider.provider_type;
+        }
+        if (activeProvider && activeProvider.api_key_env) {
+          this.onboardingWizard.providerApiKeyEnv = activeProvider.api_key_env;
+        }
+        this.onboardingWizard.shellEnabled = shellConfig.enabled == null
+          ? true
+          : Boolean(shellConfig.enabled);
+        this.onboardingWizard.browserEnabled = browserConfig.enabled == null
+          ? true
+          : Boolean(browserConfig.enabled);
+        this.onboardingWizard.browserCdpUrl = browserConfig.cdp_url || '';
+
+        if (users.length > 0) {
+          const firstUser = users[0];
+          this.userList = users;
+          this.onboardingWizard.userId = firstUser.user_id;
+          this.onboardingWizard.userConfigPath = firstUser.config_path;
+          this.onboardingWizard.userAlreadyExists = true;
+
+          const userResponse = await api(`/config/users/${encodeURIComponent(firstUser.user_id)}`);
+          const userConfig = userResponse.config || {};
+          const telegram = userConfig.channels && userConfig.channels.telegram;
+          const firstSender = Array.isArray(telegram && telegram.senders) && telegram.senders.length > 0
+            ? telegram.senders[0]
+            : null;
+          const firstSenderId = firstSender && Array.isArray(firstSender.platform_ids)
+            ? (firstSender.platform_ids[0] || '')
+            : '';
+
+          this.onboardingWizard.telegramEnabled = Boolean(telegram && telegram.enabled);
+          this.onboardingWizard.telegramBotTokenEnv = (telegram && telegram.bot_token_env)
+            || this.onboardingWizard.telegramBotTokenEnv
+            || 'TELEGRAM_BOT_TOKEN';
+          this.onboardingWizard.telegramSenderId = firstSenderId;
+        } else {
+          this.onboardingWizard.userAlreadyExists = false;
+          if (!this.onboardingWizard.userConfigPath.trim()) {
+            this.onboardingWizard.userConfigPath = this.defaultUserConfigPath(this.onboardingWizard.userId);
+          }
+        }
+
+        await this.onboardingLoadCatalogModels(this.onboardingWizard.providerType);
+      } catch (error) {
+        this.showToast(error.message, 'error');
       }
     },
 
@@ -1186,6 +1256,11 @@ function app() {
         this.onboardingWizard.providerApiKey
           ? 'Provider credential: inline API key'
           : `Provider credential env: ${this.onboardingWizard.providerApiKeyEnv || '(not set)'}`,
+        `Shell tool default: ${this.onboardingWizard.shellEnabled ? 'enabled' : 'disabled'}`,
+        `Browser tool default: ${this.onboardingWizard.browserEnabled ? 'enabled' : 'disabled'}${this.onboardingWizard.browserCdpUrl ? ` (CDP: ${this.onboardingWizard.browserCdpUrl})` : ''}`,
+        this.onboardingWizard.telegramEnabled
+          ? `Telegram: enabled via ${this.onboardingWizard.telegramBotTokenEnv || '(env not set)'} for sender ${this.onboardingWizard.telegramSenderId || '(sender not set)'}`
+          : 'Telegram: not configured',
       ];
     },
 
@@ -1238,18 +1313,21 @@ function app() {
             this.onboardingWizard.userConfigPath = this.defaultUserConfigPath(this.onboardingWizard.userId);
           }
 
-          await api('/config/users', {
-            method: 'POST',
-            body: {
-              user_id: this.onboardingWizard.userId.trim(),
-              config_path: this.onboardingWizard.userConfigPath.trim(),
-            },
-          });
+          if (!this.onboardingWizard.userAlreadyExists) {
+            await api('/config/users', {
+              method: 'POST',
+              body: {
+                user_id: this.onboardingWizard.userId.trim(),
+                config_path: this.onboardingWizard.userConfigPath.trim(),
+              },
+            });
+            this.onboardingWizard.userAlreadyExists = true;
+          }
           await this.loadUsersPage();
           this.onboardingWizard.step = 4;
           this.showToast('User registration completed.', 'success');
           // Pre-load catalog models for the default provider type
-          this.onboardingLoadCatalogModels(this.onboardingWizard.providerType);
+          await this.onboardingLoadCatalogModels(this.onboardingWizard.providerType);
           return;
         }
 
@@ -1294,6 +1372,59 @@ function app() {
         }
 
         if (this.onboardingWizard.step === 5) {
+          const toolPatch = {
+            tools: {
+              shell: {
+                enabled: Boolean(this.onboardingWizard.shellEnabled),
+              },
+              browser: {
+                enabled: Boolean(this.onboardingWizard.browserEnabled),
+                cdp_url: this.onboardingWizard.browserCdpUrl.trim() || null,
+              },
+            },
+          };
+          const userEndpoint = `/config/users/${encodeURIComponent(this.onboardingWizard.userId.trim())}`;
+          const userPatch = this.onboardingWizard.telegramEnabled
+            ? {
+              channels: {
+                telegram: {
+                  enabled: true,
+                  bot_token_env: this.onboardingWizard.telegramBotTokenEnv.trim(),
+                  senders: [{
+                    platform_ids: [this.onboardingWizard.telegramSenderId.trim()],
+                  }],
+                },
+              },
+            }
+            : {
+              channels: {
+                telegram: null,
+              },
+            };
+
+          if (this.onboardingWizard.telegramEnabled) {
+            if (!this.onboardingWizard.telegramBotTokenEnv.trim()) {
+              throw new Error('Telegram bot token env var is required when Telegram is enabled.');
+            }
+            if (!this.onboardingWizard.telegramSenderId.trim()) {
+              throw new Error('Telegram sender ID is required when Telegram is enabled.');
+            }
+          }
+
+          await api('/config/agent/validate', { method: 'POST', body: toolPatch });
+          await api(`${userEndpoint}/validate`, { method: 'POST', body: userPatch });
+          await api('/config/agent', { method: 'PATCH', body: toolPatch });
+          await api(userEndpoint, { method: 'PATCH', body: userPatch });
+          this.schemaCache = null;
+          await this.loadAgentConfig();
+          await this.loadUsersPage();
+          await this.refreshOnboardingStatus();
+          this.onboardingWizard.step = 6;
+          this.showToast('Tool and channel settings saved.', 'success');
+          return;
+        }
+
+        if (this.onboardingWizard.step === 6) {
           this.onboardingWizard.done = true;
           await this.refreshOnboardingStatus();
           this.showToast('Setup complete! Configure your agent settings now.', 'success');

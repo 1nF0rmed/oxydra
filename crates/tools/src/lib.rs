@@ -997,8 +997,33 @@ async fn bootstrap_bash_tool(
         );
     };
 
-    let (tool, shell_status) = connect_sidecar_bash_tool(endpoint).await;
-    let browser_status = shell_status.clone();
+    let (tool, connected_status) = connect_sidecar_bash_tool(endpoint).await;
+    let shell_requested = bootstrap
+        .startup_status
+        .as_ref()
+        .map(|status| status.shell_available)
+        .unwrap_or(true);
+    let browser_requested = bootstrap
+        .startup_status
+        .as_ref()
+        .map(|status| status.browser_available)
+        .unwrap_or(true);
+    let shell_status = if shell_requested {
+        connected_status.clone()
+    } else {
+        unavailable_status(
+            SessionUnavailableReason::Disabled,
+            "runner bootstrap indicates the shell tool is disabled for this user",
+        )
+    };
+    let browser_status = if browser_requested {
+        connected_status
+    } else {
+        unavailable_status(
+            SessionUnavailableReason::Disabled,
+            "runner bootstrap indicates the browser tool is disabled for this user",
+        )
+    };
     (tool, shell_status, browser_status)
 }
 

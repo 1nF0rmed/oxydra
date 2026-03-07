@@ -35,15 +35,15 @@ use tokio_tungstenite::{
 use tools::{ProcessHardeningOutcome, attempt_process_tier_hardening};
 use tracing::{info, warn};
 use types::{
-    BootstrapEnvelopeError, BrowserToolConfig, GATEWAY_PROTOCOL_VERSION,
-    GatewayClientFrame, GatewayClientHello, GatewayHealthCheck, GatewayServerFrame, LogRole,
-    LogSource, LogStream, RunnerBootstrapEnvelope, RunnerConfigError, RunnerControl,
-    RunnerControlError, RunnerControlErrorCode, RunnerControlHealthStatus,
-    RunnerControlLogsRequest, RunnerControlLogsResponse, RunnerControlResponse,
-    RunnerControlShutdownStatus, RunnerGlobalConfig, RunnerGuestImages, RunnerLogEntry,
-    RunnerMountPaths, RunnerResolvedMountPaths, RunnerResourceLimits, RunnerRuntimePolicy,
-    RunnerUserConfig, RunnerUserRegistration, SandboxTier, SidecarEndpoint, SidecarTransport,
-    StartupDegradedReason, StartupDegradedReasonCode, StartupStatusReport,
+    BootstrapEnvelopeError, BrowserToolConfig, GATEWAY_PROTOCOL_VERSION, GatewayClientFrame,
+    GatewayClientHello, GatewayHealthCheck, GatewayServerFrame, LogRole, LogSource, LogStream,
+    RunnerBootstrapEnvelope, RunnerConfigError, RunnerControl, RunnerControlError,
+    RunnerControlErrorCode, RunnerControlHealthStatus, RunnerControlLogsRequest,
+    RunnerControlLogsResponse, RunnerControlResponse, RunnerControlShutdownStatus,
+    RunnerGlobalConfig, RunnerGuestImages, RunnerLogEntry, RunnerMountPaths,
+    RunnerResolvedMountPaths, RunnerResourceLimits, RunnerRuntimePolicy, RunnerUserConfig,
+    RunnerUserRegistration, SandboxTier, SidecarEndpoint, SidecarTransport, StartupDegradedReason,
+    StartupDegradedReasonCode, StartupStatusReport,
 };
 
 mod backend;
@@ -142,12 +142,14 @@ impl Runner {
     ) -> Result<RunnerStartup, RunnerError> {
         let user_id = validate_user_id(&request.user_id)?.to_owned();
         let user_config = self.load_user_config(&user_id)?;
+        let agent_tools = load_agent_tools_config();
         let workspace = self.provision_user_workspace(&user_id)?;
         let effective_launch_settings =
             resolve_effective_launch_settings(&workspace, &user_config)?;
         let sandbox_tier =
             resolve_sandbox_tier(&self.global_config, &user_config, request.insecure);
-        let capabilities = resolve_requested_capabilities(sandbox_tier, &user_config);
+        let capabilities =
+            resolve_requested_capabilities(sandbox_tier, &agent_tools, &user_config.behavior);
 
         // Pre-compute the sidecar endpoint so we can build the bootstrap envelope
         // before launching the backend. Container/MicroVM tiers need the bootstrap
@@ -228,11 +230,8 @@ impl Runner {
             match find_available_port() {
                 Some(port) => {
                     let bridge_token = generate_bridge_token();
-                    let (browser_shell_env, pinchtab_url) = build_browser_env(
-                        port,
-                        &bridge_token,
-                        user_config.behavior.browser_cdp_url.as_deref(),
-                    );
+                    let (browser_shell_env, pinchtab_url) =
+                        build_browser_env(port, &bridge_token, agent_tools.browser_cdp_url());
 
                     // Shell-vm env: Pinchtab process config + auth token.
                     shell_env.extend(browser_shell_env);
@@ -251,7 +250,7 @@ impl Runner {
 
                     // Apply shell policy overlay: add curl, jq, sleep and
                     // enable operators for the browser skill's curl workflow.
-                    let shell_config = load_shell_config_for_overlay();
+                    let shell_config = agent_tools.shell.clone().unwrap_or_default();
                     write_shell_overlay(shell_config, apply_browser_shell_overlay, &workspace);
 
                     info!(port = port, "browser (Pinchtab) provisioned for shell-vm");
@@ -455,6 +454,15 @@ pub fn load_runner_user_config(path: impl AsRef<Path>) -> Result<RunnerUserConfi
         })?;
     config.validate()?;
     Ok(config)
+}
+
+fn load_agent_tools_config() -> types::ToolsConfig {
+    let host_paths = bootstrap::ConfigSearchPaths::discover().ok();
+    let agent_config = host_paths.as_ref().and_then(|paths| {
+        bootstrap::load_agent_config_with_paths(paths, None, bootstrap::CliOverrides::default())
+            .ok()
+    });
+    agent_config.map(|config| config.tools).unwrap_or_default()
 }
 
 pub fn provision_user_workspace(
@@ -1622,15 +1630,17 @@ fn build_startup_status_report(
 
 fn resolve_requested_capabilities(
     sandbox_tier: SandboxTier,
-    user_config: &RunnerUserConfig,
+    agent_tools: &types::ToolsConfig,
+    user_behavior: &types::RunnerBehaviorOverrides,
 ) -> RequestedCapabilities {
-    let mut shell = !matches!(sandbox_tier, SandboxTier::Process);
-    let mut browser = !matches!(sandbox_tier, SandboxTier::Process);
+    let mut shell = !matches!(sandbox_tier, SandboxTier::Process) && agent_tools.shell_enabled();
+    let mut browser =
+        !matches!(sandbox_tier, SandboxTier::Process) && agent_tools.browser_enabled();
 
-    if let Some(enabled) = user_config.behavior.shell_enabled {
+    if let Some(enabled) = user_behavior.shell_enabled {
         shell &= enabled;
     }
-    if let Some(enabled) = user_config.behavior.browser_enabled {
+    if let Some(enabled) = user_behavior.browser_enabled {
         browser &= enabled;
     }
 
@@ -2941,20 +2951,6 @@ fn build_browser_env(
         env_vars.push(format!("BROWSER_EXTERNAL_CDP_URL={cdp_url}"));
     }
     (env_vars, pinchtab_url)
-}
-
-/// Loads the current agent shell config for overlay use.
-fn load_shell_config_for_overlay() -> types::ShellConfig {
-    let host_paths = bootstrap::ConfigSearchPaths::discover().ok();
-    let agent_config = host_paths.as_ref().and_then(|paths| {
-        bootstrap::load_agent_config_with_paths(
-            paths,
-            None,
-            bootstrap::CliOverrides::default(),
-        )
-        .ok()
-    });
-    agent_config.and_then(|c| c.tools.shell).unwrap_or_default()
 }
 
 /// Serialises an updated shell config back into the workspace agent config

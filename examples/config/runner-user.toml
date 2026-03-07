@@ -30,12 +30,12 @@ config_version = "1.0.1"
 # anthropic_key = "env:ANTHROPIC_API_KEY"
 
 # --- Behavior overrides ---
-# Per-user overrides for sandbox behavior. These take precedence over
-# the global defaults in runner.toml.
+# Per-user overrides for sandbox behavior. Shell/browser access here is
+# restrictive-only on top of the workspace defaults in agent.toml.
 [behavior]
 # sandbox_tier    = "container"   # Override the global default_tier for this user
-# shell_enabled   = true          # Enable/disable shell tool access
-# browser_enabled = false         # Enable/disable browser tool access
+# shell_enabled   = true          # Restrict or allow shell access for this user
+# browser_enabled = false         # Restrict or allow browser access for this user
 
 # --- External Channels ---
 # Per-user channel configuration for external messaging platforms.

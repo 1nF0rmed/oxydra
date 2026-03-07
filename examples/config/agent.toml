@@ -164,9 +164,10 @@ jitter          = false # Add randomized jitter to backoff
 # --- Shell command allowlist ---
 # Configure which commands the LLM is allowed to execute via shell_exec.
 # By default, all commands are allowed (`allow = ["*"]`) and operators are enabled.
-# Set [tools.shell] explicitly to lock this down.
+# Set [tools.shell] explicitly to disable shell or lock the policy down.
 
 # [tools.shell]
+# enabled = true                        # Workspace-wide default for shell tool access
 # allow = ["*"]                      # Default: allow all commands (supports globs)
 # deny = ["rm"]                      # Optional blocklist entries
 # replace_defaults = false            # If true, `allow` replaces the built-in fallback list entirely
@@ -177,6 +178,15 @@ jitter          = false # Add randomized jitter to backoff
 # Use env_keys for shell-specific secrets. CLI --env entries prefixed
 # with SHELL_ are also forwarded with the prefix stripped
 # (e.g. --env SHELL_NPM_TOKEN=xxx becomes NPM_TOKEN in the shell).
+
+# --- Browser automation ---
+# Configure workspace-wide browser defaults. Browser automation is enabled by
+# default outside process tier; set [tools.browser] explicitly to disable it or
+# point Pinchtab at an external Chrome CDP endpoint.
+#
+# [tools.browser]
+# enabled = true
+# cdp_url = "http://127.0.0.1:9222"   # Optional external Chromium remote-debugging endpoint
 
 # --- Scheduler ---
 # Enable and configure the scheduler for automated recurring/one-off tasks.

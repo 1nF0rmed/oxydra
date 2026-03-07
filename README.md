@@ -358,9 +358,9 @@ platform_ids = ["12345678"]
 Only IDs listed in `[[channels.telegram.senders]]` are allowed to interact with your agent.
 Telegram supports the same session commands (`/new`, `/sessions`, `/switch`, `/cancel`, `/cancelall`, `/status`).
 
-### 9) (Optional) Web Configurator for ongoing management
+### 9) (Optional) Web Configurator for guided setup and ongoing management
 
-The web configurator provides a browser-based dashboard for managing Oxydra without editing TOML files directly — useful for day-to-day config changes after your initial setup.
+The web configurator provides a browser-based dashboard for managing Oxydra without editing TOML files directly — useful both for first-run onboarding and day-to-day config changes later.
 
 ```bash
 # Start the web configurator
@@ -372,6 +372,7 @@ runner --config .oxydra/runner.toml web --bind 0.0.0.0:8080
 
 Then open `http://127.0.0.1:9400` in your browser. The dashboard offers:
 - **Config editors** for runner, agent, and user settings (with validation and backups)
+- **Guided onboarding** for runner, first-user, provider, tool defaults, and optional Telegram setup
 - **Control panel** to start/stop/restart daemons
 - **Log viewer** with filtering and auto-refresh
 - **Status dashboard** showing registered users and daemon health
@@ -411,14 +412,22 @@ Oxydra can control a headless Chrome browser (via [Pinchtab](https://github.com/
 
 **Requires:** `container` isolation tier. Browser is not available in `process` (`--insecure`) mode.
 
-Uncomment in `.oxydra/users/alice.toml`:
+Enable it workspace-wide in `.oxydra/agent.toml`:
+
+```toml
+[tools.browser]
+enabled = true
+# cdp_url = "http://127.0.0.1:9222"   # Optional external Chrome/Chromium CDP endpoint
+```
+
+If you need to restrict browser access for one user, add an override in `.oxydra/users/alice.toml`:
 
 ```toml
 [behavior]
-browser_enabled = true
+browser_enabled = false
 ```
 
-Or toggle it in the web configurator under **User Config → Behavior → Browser Access**.
+Or use the web configurator under **Agent Config → Tools → Browser** for workspace defaults and **User Config → Behavior** for per-user restrictions.
 
 **How it works:** The Browser Automation skill is a markdown document embedded in the Oxydra binary. When browser is enabled and Pinchtab starts successfully, the skill is automatically injected into the agent's system prompt with the Pinchtab API URL pre-filled. The shell sandbox is also automatically extended to allow `curl`, `jq`, `sleep`, and shell operators (`&&`, `|`, `$()`) — no manual shell config changes needed. The agent then drives the browser entirely through `curl` calls to Pinchtab's REST API, keeping all browser activity inside the sandboxed container.
 
@@ -482,10 +491,12 @@ By default the agent has access to ~30 common shell commands (find, grep, git, p
 
 ```toml
 [tools.shell]
+enabled          = true                               # Workspace-wide default for shell access
 allow            = ["npm", "make", "docker", "rg"]   # Add to the default allowlist
 deny             = ["rm"]                             # Remove from the defaults
 allow_operators  = true                               # Enable &&, ||, |, $() chaining
 env_keys         = ["NPM_TOKEN", "GH_TOKEN"]          # Forward specific env vars into the shell
+command_timeout_secs = 60                             # Max seconds per shell command
 ```
 
 To replace the default list entirely and have full control over allowed commands:
@@ -495,6 +506,8 @@ To replace the default list entirely and have full control over allowed commands
 replace_defaults = true
 allow            = ["git", "python3", "pip", "npm"]
 ```
+
+If you need to disable shell for a specific user while keeping it on globally, set `behavior.shell_enabled = false` in that user's config.
 
 ### Skills: Custom Workflows and Overrides
 

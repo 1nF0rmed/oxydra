@@ -25,7 +25,7 @@ pub use channel::{
     GatewayTurnStatus, MediaAttachment, MediaCapabilities, MediaType,
 };
 pub use config::{
-    AgentConfig, AgentDefinition, AttachmentSaveConfig, CatalogConfig, ConfigError,
+    AgentConfig, AgentDefinition, AttachmentSaveConfig, BrowserConfig, CatalogConfig, ConfigError,
     ContextBudgetConfig, GatewayConfig, MemoryConfig, MemoryEmbeddingBackend, Model2vecModel,
     ProviderConfigs, ProviderRegistryEntry, ProviderSelection, ProviderType, ReliabilityConfig,
     RetrievalConfig, RuntimeConfig, SUPPORTED_CONFIG_MAJOR_VERSION, SchedulerConfig, ShellConfig,

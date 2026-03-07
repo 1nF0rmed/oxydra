@@ -255,6 +255,8 @@ impl RunnerUserConfig {
         self.mounts.validate()?;
         self.resources.validate()?;
         validate_credential_refs(&self.credential_refs)?;
+        self.behavior.validate()?;
+        self.channels.validate()?;
 
         Ok(())
     }
@@ -411,6 +413,7 @@ impl RunnerResourceLimits {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct RunnerBehaviorOverrides {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox_tier: Option<SandboxTier>,
@@ -418,12 +421,12 @@ pub struct RunnerBehaviorOverrides {
     pub shell_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_enabled: Option<bool>,
-    /// HTTP base URL of an external Chromium instance running with
-    /// `--remote-debugging-port`. When set, Pinchtab connects to this instance
-    /// instead of launching bundled Chromium.
-    /// Example: `http://192.168.1.100:9222`
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub browser_cdp_url: Option<String>,
+}
+
+impl RunnerBehaviorOverrides {
+    fn validate(&self) -> Result<(), RunnerConfigError> {
+        Ok(())
+    }
 }
 
 // ── Browser (Pinchtab) Configuration Types ──────────────────────────────────
@@ -455,6 +458,13 @@ impl ChannelsConfig {
     /// Returns `true` if no channel is configured.
     pub fn is_empty(&self) -> bool {
         self.telegram.is_none()
+    }
+
+    fn validate(&self) -> Result<(), RunnerConfigError> {
+        if let Some(telegram) = &self.telegram {
+            telegram.validate()?;
+        }
+        Ok(())
     }
 
     /// Collect all `bot_token_env` references from enabled channels.
@@ -494,6 +504,44 @@ pub struct TelegramChannelConfig {
     pub max_message_length: usize,
 }
 
+impl TelegramChannelConfig {
+    fn validate(&self) -> Result<(), RunnerConfigError> {
+        if self
+            .bot_token_env
+            .as_ref()
+            .is_some_and(|value| value.trim().is_empty())
+        {
+            return Err(RunnerConfigError::InvalidTelegramBotTokenEnv);
+        }
+        if self.polling_timeout_secs == 0 {
+            return Err(RunnerConfigError::InvalidTelegramPollingTimeout {
+                value: self.polling_timeout_secs,
+            });
+        }
+        if self.max_message_length == 0 {
+            return Err(RunnerConfigError::InvalidTelegramMaxMessageLength {
+                value: self.max_message_length,
+            });
+        }
+        if self.enabled {
+            if self
+                .bot_token_env
+                .as_ref()
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                return Err(RunnerConfigError::InvalidTelegramBotTokenEnv);
+            }
+            if self.senders.is_empty() {
+                return Err(RunnerConfigError::MissingTelegramSenders);
+            }
+        }
+        for (index, sender) in self.senders.iter().enumerate() {
+            sender.validate(index)?;
+        }
+        Ok(())
+    }
+}
+
 /// A sender identity binding: a set of platform-specific IDs that identify
 /// the same person. All authorized senders are treated identically as the
 /// owning user — there is no role differentiation.
@@ -505,6 +553,22 @@ pub struct SenderBinding {
     /// Optional human-readable name for logging and audit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+}
+
+impl SenderBinding {
+    fn validate(&self, index: usize) -> Result<(), RunnerConfigError> {
+        if self.platform_ids.is_empty() || self.platform_ids.iter().any(|id| id.trim().is_empty()) {
+            return Err(RunnerConfigError::InvalidTelegramSenderPlatformIds { index });
+        }
+        if self
+            .display_name
+            .as_ref()
+            .is_some_and(|name| name.trim().is_empty())
+        {
+            return Err(RunnerConfigError::InvalidTelegramSenderDisplayName { index });
+        }
+        Ok(())
+    }
 }
 
 fn default_polling_timeout_secs() -> u64 {
@@ -544,6 +608,22 @@ pub enum RunnerConfigError {
     InvalidWebBind { bind: String },
     #[error("runner web auth_mode is \"token\" but neither auth_token_env nor auth_token is set")]
     WebTokenAuthMissingSource,
+    #[error(
+        "channels.telegram.bot_token_env must be set to a non-empty env var name when telegram is enabled"
+    )]
+    InvalidTelegramBotTokenEnv,
+    #[error("channels.telegram.polling_timeout_secs must be greater than zero; got {value}")]
+    InvalidTelegramPollingTimeout { value: u64 },
+    #[error("channels.telegram.max_message_length must be greater than zero; got {value}")]
+    InvalidTelegramMaxMessageLength { value: usize },
+    #[error("channels.telegram.senders must contain at least one sender when telegram is enabled")]
+    MissingTelegramSenders,
+    #[error(
+        "channels.telegram.senders[{index}].platform_ids must contain at least one non-empty ID"
+    )]
+    InvalidTelegramSenderPlatformIds { index: usize },
+    #[error("channels.telegram.senders[{index}].display_name must not be empty when set")]
+    InvalidTelegramSenderDisplayName { index: usize },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1059,4 +1139,44 @@ fn parse_runner_config_major(config_version: &str) -> Result<u64, RunnerConfigEr
     }
 
     Ok(major)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runner_user_config_rejects_enabled_telegram_without_sender() {
+        let mut config = RunnerUserConfig::default();
+        config.channels.telegram = Some(TelegramChannelConfig {
+            enabled: true,
+            bot_token_env: Some("TELEGRAM_BOT_TOKEN".to_owned()),
+            polling_timeout_secs: 30,
+            senders: Vec::new(),
+            max_message_length: 4096,
+        });
+
+        let result = config.validate();
+        assert!(matches!(
+            result,
+            Err(RunnerConfigError::MissingTelegramSenders)
+        ));
+    }
+
+    #[test]
+    fn runner_user_config_accepts_valid_enabled_telegram_channel() {
+        let mut config = RunnerUserConfig::default();
+        config.channels.telegram = Some(TelegramChannelConfig {
+            enabled: true,
+            bot_token_env: Some("TELEGRAM_BOT_TOKEN".to_owned()),
+            polling_timeout_secs: 30,
+            senders: vec![SenderBinding {
+                platform_ids: vec!["12345678".to_owned()],
+                display_name: Some("Alice".to_owned()),
+            }],
+            max_message_length: 4096,
+        });
+
+        config.validate().expect("telegram config should validate");
+    }
 }

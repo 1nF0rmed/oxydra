@@ -553,6 +553,7 @@ mod tests {
         let workspace = unique_temp_workspace("policy-shell-ops");
         let policy = WorkspaceSecurityPolicy::for_bootstrap_workspace(&workspace)
             .with_shell_config(Some(&ShellConfig {
+                enabled: None,
                 allow: None,
                 deny: None,
                 replace_defaults: None,
@@ -743,6 +744,7 @@ mod tests {
     fn shell_config_allow_extends_defaults() {
         let workspace = unique_temp_workspace("shell-cfg-allow");
         let config = ShellConfig {
+            enabled: None,
             allow: Some(vec!["npm".to_owned(), "curl".to_owned()]),
             deny: None,
             replace_defaults: None,
@@ -786,6 +788,7 @@ mod tests {
     fn shell_config_deny_removes_from_defaults() {
         let workspace = unique_temp_workspace("shell-cfg-deny");
         let config = ShellConfig {
+            enabled: None,
             allow: None,
             deny: Some(vec!["ls".to_owned()]),
             replace_defaults: None,
@@ -818,6 +821,7 @@ mod tests {
     fn shell_config_replace_defaults_replaces_entirely() {
         let workspace = unique_temp_workspace("shell-cfg-replace");
         let config = ShellConfig {
+            enabled: None,
             allow: Some(vec!["npm".to_owned(), "curl".to_owned()]),
             deny: None,
             replace_defaults: Some(true),
@@ -854,6 +858,7 @@ mod tests {
     fn shell_config_glob_pattern_matching() {
         let workspace = unique_temp_workspace("shell-cfg-glob");
         let config = ShellConfig {
+            enabled: None,
             allow: Some(vec!["cargo-*".to_owned(), "*test*".to_owned()]),
             deny: None,
             replace_defaults: None,
@@ -885,6 +890,7 @@ mod tests {
     fn shell_config_allow_operators() {
         let workspace = unique_temp_workspace("shell-cfg-operators");
         let config = ShellConfig {
+            enabled: None,
             allow: None,
             deny: None,
             replace_defaults: None,
@@ -971,6 +977,7 @@ mod tests {
     fn browser_shell_overlay_allows_browser_skill_commands() {
         let workspace = unique_temp_workspace("browser-overlay-policy");
         let config = ShellConfig {
+            enabled: None,
             allow: Some(vec!["curl".to_owned(), "jq".to_owned(), "sleep".to_owned()]),
             deny: None,
             replace_defaults: None,

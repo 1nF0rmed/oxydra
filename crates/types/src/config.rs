@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use url::Url;
 
 use crate::{ModelCatalog, ModelId, ProviderId};
 
@@ -82,6 +83,7 @@ impl AgentConfig {
         }
 
         self.memory.validate()?;
+        self.tools.validate()?;
 
         Ok(())
     }
@@ -636,6 +638,8 @@ pub struct ToolsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell: Option<ShellConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser: Option<BrowserConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment_save: Option<AttachmentSaveConfig>,
 }
 
@@ -644,8 +648,41 @@ impl Default for ToolsConfig {
         Self {
             web_search: None,
             shell: Some(ShellConfig::default()),
+            browser: None,
             attachment_save: None,
         }
+    }
+}
+
+impl ToolsConfig {
+    pub fn shell_enabled(&self) -> bool {
+        self.shell
+            .as_ref()
+            .and_then(|config| config.enabled)
+            .unwrap_or(true)
+    }
+
+    pub fn browser_enabled(&self) -> bool {
+        self.browser
+            .as_ref()
+            .and_then(|config| config.enabled)
+            .unwrap_or(true)
+    }
+
+    pub fn browser_cdp_url(&self) -> Option<&str> {
+        self.browser
+            .as_ref()
+            .and_then(|config| config.cdp_url.as_deref())
+    }
+
+    fn validate(&self) -> Result<(), ConfigError> {
+        if let Some(shell) = &self.shell {
+            shell.validate()?;
+        }
+        if let Some(browser) = &self.browser {
+            browser.validate()?;
+        }
+        Ok(())
     }
 }
 
@@ -677,6 +714,12 @@ fn default_attachment_save_timeout_secs() -> u64 {
 /// true` plus an explicit `allow` list to lock the policy down.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShellConfig {
+    /// Global master switch for the shell tool.
+    ///
+    /// Default: `true`. Leave unset to use the default. When `false`, the
+    /// shell tool is disabled for all users in this workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
     /// Additional commands to add to the allowlist.
     /// Supports glob patterns (e.g., `"npm*"`, `"cargo-*"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -719,6 +762,7 @@ pub struct ShellConfig {
 impl Default for ShellConfig {
     fn default() -> Self {
         Self {
+            enabled: Some(true),
             allow: Some(vec!["*".to_owned()]),
             deny: None,
             replace_defaults: Some(false),
@@ -726,6 +770,67 @@ impl Default for ShellConfig {
             env_keys: None,
             command_timeout_secs: None, // uses DEFAULT_SHELL_COMMAND_TIMEOUT_SECS
         }
+    }
+}
+
+impl ShellConfig {
+    fn validate(&self) -> Result<(), ConfigError> {
+        if let Some(command_timeout_secs) = self.command_timeout_secs
+            && command_timeout_secs == 0
+        {
+            return Err(ConfigError::InvalidShellCommandTimeout {
+                value: command_timeout_secs,
+            });
+        }
+
+        if let Some(env_keys) = &self.env_keys
+            && env_keys.iter().any(|key| key.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidShellEnvKey);
+        }
+
+        Ok(())
+    }
+}
+
+/// Browser tool configuration.
+///
+/// Controls whether browser automation is globally available in this
+/// workspace and optionally points Pinchtab at an external Chrome CDP
+/// endpoint instead of launching bundled Chromium.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowserConfig {
+    /// Global master switch for the browser tool.
+    ///
+    /// Default: `true`. Leave unset to use the default. When `false`, the
+    /// browser tool is disabled for all users in this workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// HTTP base URL of an external Chromium instance running with
+    /// `--remote-debugging-port`.
+    ///
+    /// Example: `http://192.168.1.100:9222`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cdp_url: Option<String>,
+}
+
+impl Default for BrowserConfig {
+    fn default() -> Self {
+        Self {
+            enabled: Some(true),
+            cdp_url: None,
+        }
+    }
+}
+
+impl BrowserConfig {
+    fn validate(&self) -> Result<(), ConfigError> {
+        if let Some(cdp_url) = &self.cdp_url {
+            validate_http_url(cdp_url).map_err(|()| ConfigError::InvalidBrowserCdpUrl {
+                url: cdp_url.clone(),
+            })?;
+        }
+        Ok(())
     }
 }
 
@@ -896,6 +1001,12 @@ pub enum ConfigError {
     InvalidReliabilityBackoff { base_ms: u64, max_ms: u64 },
     #[error("memory remote mode requires an auth token for `{remote_url}`")]
     MissingMemoryAuthToken { remote_url: String },
+    #[error("shell command timeout must be greater than zero; got {value}")]
+    InvalidShellCommandTimeout { value: u64 },
+    #[error("shell env_keys entries must not be empty")]
+    InvalidShellEnvKey,
+    #[error("browser cdp_url `{url}` must be a valid http(s) URL")]
+    InvalidBrowserCdpUrl { url: String },
     #[error("gateway limit `{field}` must be greater than zero; got {value}")]
     InvalidGatewayLimit { field: &'static str, value: u64 },
     #[error("agent `{agent}` references unknown tool `{tool}`")]
@@ -911,6 +1022,14 @@ pub fn validate_config_version(config_version: &str) -> Result<(), ConfigError> 
             version: config_version.trim().to_owned(),
             supported_major: SUPPORTED_CONFIG_MAJOR_VERSION,
         });
+    }
+    Ok(())
+}
+
+fn validate_http_url(raw: &str) -> Result<(), ()> {
+    let parsed = Url::parse(raw.trim()).map_err(|_| ())?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err(());
     }
     Ok(())
 }
@@ -1256,6 +1375,7 @@ mod tests {
         assert_eq!(
             config.tools.shell,
             Some(ShellConfig {
+                enabled: Some(true),
                 allow: Some(vec!["*".to_owned()]),
                 deny: None,
                 replace_defaults: Some(false),
@@ -1264,6 +1384,7 @@ mod tests {
                 command_timeout_secs: None,
             })
         );
+        assert_eq!(config.tools.browser, None);
     }
 
     #[test]
@@ -1296,6 +1417,38 @@ mod tests {
         assert!(matches!(
             result,
             Err(ConfigError::UnsupportedProvider { provider }) if provider == "nonexistent"
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_invalid_browser_cdp_url() {
+        let mut config = AgentConfig::default();
+        config.tools.browser = Some(BrowserConfig {
+            enabled: Some(true),
+            cdp_url: Some("not-a-url".to_owned()),
+        });
+
+        let result = config.validate();
+        assert!(matches!(
+            result,
+            Err(ConfigError::InvalidBrowserCdpUrl { url }) if url == "not-a-url"
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_zero_shell_command_timeout() {
+        let mut config = AgentConfig::default();
+        let shell = config
+            .tools
+            .shell
+            .as_mut()
+            .expect("default shell config should exist");
+        shell.command_timeout_secs = Some(0);
+
+        let result = config.validate();
+        assert!(matches!(
+            result,
+            Err(ConfigError::InvalidShellCommandTimeout { value }) if value == 0
         ));
     }
 
