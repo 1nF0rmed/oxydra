@@ -29,7 +29,7 @@ Oxydra is designed for people who want an agent runtime they can self-host, insp
 - **Structured runtime loop**: Planning, tool dispatch, retries, context budget management, and bounded turn/cost controls.
 - **Persistent memory**: libSQL-backed hybrid retrieval (vector + FTS), summarization, memory CRUD tools, and session scratchpad.
 - **Durable scheduler**: One-off and periodic jobs with run history and notification routing.
-- **Skill system and browser automation**: Markdown-based workflow skills injected into the agent's system prompt. The built-in **Browser Automation** skill drives headless Chrome via Pinchtab's REST API through the existing sandboxed shell — navigate pages, click/fill forms, take screenshots, download files — all without a dedicated tool. Users can author custom skills or override built-ins.
+- **Skill system and browser automation**: Markdown-based workflow skills injected into the agent's system prompt. The built-in **Browser Automation** skill works with the dedicated `browser` tool to drive headless Chrome via Pinchtab's REST API. Users can author custom skills or override built-ins.
 - **Isolation model**: Process, container, and microVM tiers with WASM sandboxing as defense-in-depth.
 - **Gateway + channels**: WebSocket gateway with per-user multi-session support, plus Telegram channel adapter.
 - **Web configurator**: Browser-based dashboard for configuration editing, daemon control, log viewing, and guided onboarding — no extra tooling required.
@@ -330,7 +330,6 @@ Even in `--insecure` mode, WASM tool policies still enforce path boundaries and 
 | `/switch <id>` | Switch by session id (prefix supported) |
 | `/cancel` | Cancel active turn in current session |
 | `/cancelall` | Cancel active turns across sessions |
-| `/status` | Show current session/runtime state |
 
 ### 8) (Optional) Enable Telegram
 
@@ -391,7 +390,7 @@ auth_token_env = "OXYDRA_WEB_TOKEN"
 
 | Symptom | Fix |
 |---|---|
-| Need to check logs | `oxydra-runner help logs` will show you the options that you have for logging across runner and containers in one place |
+| Need to check logs | Run `runner logs --help` to see the available log retrieval options |
 | `oxydra-tui was not found in PATH` | Ensure install dir is in `PATH` or run the binary directly |
 | Docker unreachable / `client error (Connect)` | Start Docker (`sudo systemctl start docker`); for Colima set `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` |
 | `Permission denied` accessing Docker socket | Add your user to the docker group: `sudo usermod -aG docker $USER` then run `newgrp docker` or log out and back in |
@@ -410,9 +409,9 @@ After initial setup, the most impactful customizations are listed below. Everyth
 
 ### Enabling Browser Automation
 
-Oxydra can control a headless Chrome browser (via [Pinchtab](https://github.com/pinchtab/pinchtab)) from within its sandboxed container. When enabled, the agent can navigate web pages, interact with forms, take screenshots, read page content, download files, and deliver results directly to you — all guided by an injected skill document and driven through ordinary shell commands.
+Oxydra can control a headless Chrome browser (via [Pinchtab](https://github.com/pinchtab/pinchtab)) from within its sandboxed environment. When enabled, the agent can navigate web pages, interact with forms, take screenshots, read page content, download files, and deliver results directly to you — guided by an injected skill document and backed by the dedicated `browser` tool.
 
-**Requires:** `container` isolation tier. Browser is not available in `process` (`--insecure`) mode.
+**Requires:** `container` or `micro_vm` isolation. Browser is not available in `process` (`--insecure`) mode.
 
 Enable it workspace-wide in `.oxydra/agent.toml`:
 
@@ -431,7 +430,7 @@ browser_enabled = false
 
 Or use the web configurator under **Agent Config → Tools → Browser** for workspace defaults and **User Config → Behavior** for per-user restrictions.
 
-**How it works:** The Browser Automation skill is a markdown document embedded in the Oxydra binary. When browser is enabled and Pinchtab starts successfully, the skill is automatically injected into the agent's system prompt with the Pinchtab API URL pre-filled. The shell sandbox is also automatically extended to allow `curl`, `jq`, `sleep`, and shell operators (`&&`, `|`, `$()`) — no manual shell config changes needed. The agent then drives the browser entirely through `curl` calls to Pinchtab's REST API, keeping all browser activity inside the sandboxed container.
+**How it works:** The Browser Automation skill is a markdown document embedded in the Oxydra binary. When browser is enabled and Pinchtab starts successfully, the skill is automatically injected into the agent's system prompt with the Pinchtab API URL pre-filled. The agent uses the built-in `browser` tool for common browser actions, and the shell sandbox is also extended to allow `curl`, `jq`, `sleep`, and shell operators when file-oriented Pinchtab flows are needed. Browser activity stays inside the sandboxed guest environment.
 
 The guest containers now run unprivileged by default. When launched by the runner, they are mapped to your host UID/GID when possible so bind-mounted workspaces stay writable.
 
@@ -452,7 +451,7 @@ runner --config .oxydra/runner.toml --user alice -e TZ=America/New_York start
 
 ### Custom Specialist Agents
 
-Specialist agents let you configure separate personas, tool scopes, and model choices for different tasks. The main agent can delegate work to specialists using the `delegate_to_agent` tool, or you can address a specialist directly from the TUI using `/new <agent-name>`.
+Specialist agents let you configure separate personas, tool scopes, and model choices for different tasks. The main agent can delegate work to specialists using the `delegate_to_agent` tool.
 
 Define specialists in `.oxydra/agent.toml`:
 
@@ -477,11 +476,11 @@ The `tools` list restricts which tools a specialist can use. Omit it entirely to
 
 ### Turn Limits and Cost Budgets
 
-The default configuration allows up to **25 turns** per interactive session with no cost cap. Tighten or loosen these in `.oxydra/agent.toml`:
+The default configuration allows up to **100 turns** per interactive session with no cost cap. Tighten or loosen these in `.oxydra/agent.toml`:
 
 ```toml
 [runtime]
-max_turns         = 15     # Reduce for more focused tasks (default: 25)
+max_turns         = 15     # Reduce for more focused tasks (default: 100)
 turn_timeout_secs = 60     # Per-LLM-call timeout in seconds
 # max_cost        = 0.50   # Optional cost cap (provider-reported units). Uncomment to enable.
 ```
@@ -506,13 +505,14 @@ session_idle_ttl_hours        = 48   # When idle sessions are archived
 
 ### Shell Command Allowlist
 
-By default the agent has access to ~30 common shell commands (find, grep, git, python3, etc.). Extend or restrict the list in `.oxydra/agent.toml`:
+By default, the shell tool is enabled with `allow = ["*"]` and shell operators enabled. To restrict it explicitly in `.oxydra/agent.toml`:
 
 ```toml
 [tools.shell]
 enabled          = true                               # Workspace-wide default for shell access
-allow            = ["npm", "make", "docker", "rg"]   # Add to the default allowlist
-deny             = ["rm"]                             # Remove from the defaults
+replace_defaults = true                               # Replace the permissive default
+allow            = ["npm", "make", "docker", "rg"]   # Explicit allowlist
+deny             = ["rm"]                             # Block specific commands
 allow_operators  = true                               # Enable &&, ||, |, $() chaining
 env_keys         = ["NPM_TOKEN", "GH_TOKEN"]          # Forward specific env vars into the shell
 command_timeout_secs = 60                             # Max seconds per shell command
@@ -570,9 +570,11 @@ Skills are capped at approximately **3,000 tokens** (~12 KB) to avoid prompt blo
 | Location | Scope | Path |
 |---|---|---|
 | Workspace skill | Project-specific (highest priority) | `.oxydra/skills/<SkillName>/SKILL.md` |
-| User skill | Shared across all projects | `~/.config/oxydra/skills/<SkillName>/SKILL.md` |
+| User skill (home) | Shared across all projects for one user | `~/.oxydra/skills/<SkillName>/SKILL.md` |
+| User skill (XDG) | Shared across all projects for one user | `~/.config/oxydra/skills/<SkillName>/SKILL.md` |
+| System skill | Machine-wide shared defaults | `/etc/oxydra/skills/<SkillName>/SKILL.md` |
 
-The **same `name` field** determines which skill wins when multiple tiers define the same skill: workspace overrides user, user overrides built-ins.
+The **same `name` field** determines which skill wins when multiple tiers define the same skill: workspace overrides `~/.oxydra`, which overrides `~/.config/oxydra`, which overrides `/etc/oxydra`, which overrides the embedded built-ins.
 
 #### Overriding or disabling a built-in skill
 
@@ -710,11 +712,10 @@ cargo test --workspace
 crates/
   types/          Core type definitions, config, model catalog
   provider/       LLM provider implementations
-  tools/          Tool trait and core tools
+  tools/          Tool trait, core tools, browser tool, and WASM sandboxing
   tools-macros/   #[tool] procedural macro
   runtime/        Agent turn-loop runtime
   memory/         Persistent memory and retrieval
-  sandbox/        WASM sandboxing and policies
   runner/         Runner lifecycle and guest orchestration
   shell-daemon/   Shell daemon protocol
   channels/       External channel adapters (Telegram)
