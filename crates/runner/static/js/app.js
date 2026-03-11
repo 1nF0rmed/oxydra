@@ -258,6 +258,7 @@ function app() {
     userStructuredEditor: null,
     userConfigRaw: null,
     selectedUserId: '',
+    pendingDeleteUserId: '',
     restartNotice: '',
     schemaCache: null,
     catalogCache: null,
@@ -293,8 +294,11 @@ function app() {
 
     async init() {
       window.addEventListener('hashchange', () => this.route());
-      this._controlPollTimer = window.setInterval(() => {
-        if (document.visibilityState !== 'visible' || this.currentPage !== 'control') {
+      this._statusPollTimer = window.setInterval(() => {
+        if (
+          document.visibilityState !== 'visible'
+          || (this.currentPage !== 'control' && this.currentPage !== 'dashboard')
+        ) {
           return;
         }
         this.loadStatus().catch((error) => this.showToast(error.message, 'error'));
@@ -573,6 +577,9 @@ function app() {
           body: {},
         });
         await this.loadStatus();
+        if (action === 'restart') {
+          this.restartNotice = '';
+        }
         this.showToast(`User ${userId}: ${action} completed.`, 'success');
       } catch (error) {
         this.showToast(error.message, 'error');
@@ -1050,11 +1057,7 @@ function app() {
     },
 
     async deleteUser(userId) {
-      const confirmed = window.confirm(`Delete user ${userId}? This also deletes the user config file.`);
-      if (!confirmed) {
-        return;
-      }
-
+      this.pendingDeleteUserId = '';
       this.saving = true;
       try {
         await api(`/config/users/${encodeURIComponent(userId)}?delete_config_file=true`, {
@@ -1482,8 +1485,7 @@ function app() {
         if (this.onboardingWizard.step === 6) {
           this.onboardingWizard.done = true;
           await this.refreshOnboardingStatus();
-          this.showToast('Setup complete! Configure your agent settings now.', 'success');
-          window.location.hash = '#/config/agent';
+          this.showToast('Setup complete!', 'success');
         }
       } catch (error) {
         this.onboardingWizard.error = error.message;
@@ -1497,9 +1499,10 @@ function app() {
       this.toast.kind = kind;
       this.toast.visible = true;
       window.clearTimeout(this._toastTimer);
+      const duration = kind === 'error' ? 8000 : 4000;
       this._toastTimer = window.setTimeout(() => {
         this.toast.visible = false;
-      }, 4000);
+      }, duration);
     },
   };
 }

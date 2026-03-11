@@ -49,8 +49,6 @@
             @click="sidebarOpen = false">Runner Config</a></li>
         <li><a href="#/config/users" :class="{ active: currentPage === 'config-users' }"
             @click="sidebarOpen = false">Users</a></li>
-        <li><a href="#/control" :class="{ active: currentPage === 'control' }" @click="sidebarOpen = false">Control</a>
-        </li>
         <li><a href="#/logs" :class="{ active: currentPage === 'logs' }" @click="sidebarOpen = false">Logs</a></li>
       </ul>
       <div class="sidebar-footer">
@@ -62,13 +60,17 @@
     <main class="content">
       <!-- Toast notification -->
       <div class="toast" :class="`toast-${toast.kind} ${toast.visible ? 'show' : ''}`" x-cloak>
-        <span x-text="toast.message"></span>
+        <div class="toast-body">
+          <span x-text="toast.message"></span>
+          <button class="toast-dismiss-btn" @click="toast.visible = false" aria-label="Dismiss">×</button>
+        </div>
       </div>
 
       <!-- Restart required banner -->
       <div x-show="restartNotice" class="banner banner-info" x-cloak>
         <strong>Restart Required:</strong>
         <span x-text="restartNotice"></span>
+        <button class="banner-dismiss-btn" @click="restartNotice = ''" aria-label="Dismiss">×</button>
       </div>
 
       <!-- Setup required banner -->
@@ -120,6 +122,12 @@
           <h3>Registered Users</h3>
           <div x-show="statusUsers.length === 0" class="empty-state">
             No users registered yet.
+            <span x-show="onboarding.needs_setup">
+              &nbsp;<a href="#/setup" @click="currentPage = 'setup'">Run the Setup Wizard</a> to get started.
+            </span>
+            <span x-show="!onboarding.needs_setup">
+              &nbsp;<a href="#/config/users" @click="currentPage = 'config-users'">Go to Users</a> to add one.
+            </span>
           </div>
           <div class="card-grid" x-show="statusUsers.length > 0">
             <template x-for="user in statusUsers" :key="user.user_id">
@@ -135,8 +143,55 @@
                   <p><strong>Browser:</strong> <span x-text="user.browser_available ? 'Yes' : 'No'"></span></p>
                   <p class="text-muted" x-show="user.message" x-text="user.message"></p>
                 </div>
+                <div class="card-footer">
+                  <button class="btn btn-primary btn-sm"
+                    :disabled="controlUserBusy(user.user_id) || user.daemon_running"
+                    @click="runControlAction(user.user_id, 'start')">
+                    <span x-show="controlUserBusy(user.user_id) && !user.daemon_running" class="spinner"></span>
+                    Start
+                  </button>
+                  <button class="btn btn-muted btn-sm" :disabled="controlUserBusy(user.user_id) || !user.daemon_running"
+                    @click="runControlAction(user.user_id, 'stop')">Stop</button>
+                  <button class="btn btn-muted btn-sm" :disabled="controlUserBusy(user.user_id) || !user.daemon_running"
+                    @click="runControlAction(user.user_id, 'restart')">Restart</button>
+                </div>
               </div>
             </template>
+          </div>
+
+          <h3 style="margin-top:28px">Quick Reference</h3>
+          <div class="page-guide">
+            <a href="#/config/agent" @click="currentPage = 'config-agent'; sidebarOpen = false" class="page-guide-item">
+              <span class="page-guide-icon">🤖</span>
+              <div>
+                <strong>Agent Config</strong>
+                <p>Add AI providers (OpenAI, Anthropic, Gemini), pick the active model, create custom agents, and set
+                  shell/browser tool defaults</p>
+              </div>
+            </a>
+            <a href="#/config/runner" @click="currentPage = 'config-runner'; sidebarOpen = false"
+              class="page-guide-item">
+              <span class="page-guide-icon">⚙️</span>
+              <div>
+                <strong>Runner Config</strong>
+                <p>Set the workspace directory where agent sessions and files are stored</p>
+              </div>
+            </a>
+            <a href="#/config/users" @click="currentPage = 'config-users'; sidebarOpen = false" class="page-guide-item">
+              <span class="page-guide-icon">👤</span>
+              <div>
+                <strong>Users</strong>
+                <p>Register users, configure per-user messaging channels (Telegram, Discord), and manage user settings
+                </p>
+              </div>
+            </a>
+            <a href="#/logs" @click="currentPage = 'logs'; sidebarOpen = false" class="page-guide-item">
+              <span class="page-guide-icon">📋</span>
+              <div>
+                <strong>Logs</strong>
+                <p>View live daemon output for debugging — filter by user, role, and log stream</p>
+              </div>
+            </a>
           </div>
         </div>
       </div>
@@ -272,8 +327,17 @@
                       x-text="(findUserStatus(user.user_id) && findUserStatus(user.user_id).daemon_running) ? 'Running' : 'Stopped'"></span>
                   </td>
                   <td class="table-actions">
-                    <button class="btn" :class="selectedUserId === user.user_id ? 'btn-primary' : 'btn-muted'" @click="loadUserConfig(user.user_id)">Edit</button>
-                    <button class="btn btn-danger" @click="deleteUser(user.user_id)">Delete</button>
+                    <button class="btn" :class="selectedUserId === user.user_id ? 'btn-primary' : 'btn-muted'"
+                      @click="loadUserConfig(user.user_id)">Edit</button>
+                    <span x-show="pendingDeleteUserId !== user.user_id">
+                      <button class="btn btn-danger" @click="pendingDeleteUserId = user.user_id">Delete</button>
+                    </span>
+                    <span x-show="pendingDeleteUserId === user.user_id" class="inline-confirm">
+                      <span class="inline-confirm-label">Delete?</span>
+                      <button class="btn btn-danger btn-sm" :disabled="saving" @click="deleteUser(user.user_id)">Yes,
+                        Delete</button>
+                      <button class="btn btn-muted btn-sm" @click="pendingDeleteUserId = ''">Cancel</button>
+                    </span>
                   </td>
                 </tr>
               </template>
@@ -381,7 +445,13 @@
         </div>
 
         <div class="empty-state" x-show="!logsState.loading && logsState.entries.length === 0">
-          No logs available for the selected filters.
+          <span x-show="logsState.userId && !isUserRunning(logsState.userId)">
+            The daemon for <strong x-text="logsState.userId"></strong> is not running — <a href="#/"
+              @click="currentPage = 'dashboard'">start it from the Dashboard</a> first.
+          </span>
+          <span x-show="!logsState.userId || isUserRunning(logsState.userId)">
+            No logs available for the selected filters.
+          </span>
         </div>
 
         <ul class="warnings-list" x-show="logsState.warnings.length > 0">
@@ -494,7 +564,8 @@
               <h3 class="wizard-step-title">Register First User</h3>
               <p class="wizard-step-desc">Choose the user name you want to use. Oxydra will keep the config file under
                 <code>users/&lt;name&gt;.toml</code>, and on a fresh install it will rename the built-in
-                <code>alice</code> user and file for you automatically.</p>
+                <code>alice</code> user and file for you automatically.
+              </p>
               <label class="wizard-field-label">
                 <span>User ID</span>
                 <input type="text" class="text-input" :value="onboardingWizard.userId"
@@ -629,12 +700,12 @@
               </ul>
               <div x-show="onboardingWizard.done" class="wizard-done-box">
                 <p class="wizard-done-title">🎉 Setup complete!</p>
-                <p class="wizard-done-desc">You can now go to Agent Config to fine-tune your model selection, or use the
-                  Control panel to start your agent daemon.</p>
+                <p class="wizard-done-desc">Your agent is ready to use. Go to the Dashboard to start your agent daemon,
+                  or open Agent Config to fine-tune settings first.</p>
                 <div class="actions-row">
-                  <a href="#/config/agent" class="btn btn-primary" @click="currentPage = 'config-agent'">Open Agent
+                  <a href="#/" class="btn btn-primary" @click="currentPage = 'dashboard'">Go to Dashboard</a>
+                  <a href="#/config/agent" class="btn btn-muted" @click="currentPage = 'config-agent'">Open Agent
                     Config</a>
-                  <a href="#/control" class="btn btn-muted" @click="currentPage = 'control'">Go to Control Panel</a>
                 </div>
               </div>
             </div>
